@@ -506,7 +506,11 @@ def decode_response_text(response) -> str:
     try:
         raw = response.body()
     except Exception:
-        return ""
+        try:
+            response.finished()
+            raw = response.body()
+        except Exception:
+            return ""
 
     raw_text = raw.decode("utf-8", errors="replace")
     chunks: list[Any] = []
@@ -534,6 +538,34 @@ def decode_response_text(response) -> str:
     return repair_mojibake_text(raw_text)
 
 
+def is_checkin_action_response(response) -> bool:
+    """判断响应是否为签到相关的 Server Action 响应。"""
+    return (
+        response.request.method == "POST"
+        and response.url.rstrip("/") == BASE_URL.rstrip("/")
+        and bool(response.request.headers.get("next-action"))
+    )
+
+
+def select_action_response(responses: list[Any]) -> tuple[Any, str, Optional[bool], str, str]:
+    """从捕获到的 Server Action 响应中选择包含业务结果的响应。"""
+    fallback: tuple[Any, str, Optional[bool], str, str] | None = None
+
+    for response in responses:
+        raw_response = decode_response_text(response)
+        response_success, message, description = extract_action_fields(raw_response)
+        current = (response, raw_response, response_success, message, description)
+
+        if fallback is None:
+            fallback = current
+        if raw_response and (response_success is not None or message or description):
+            return current
+
+    if fallback is not None:
+        return fallback
+    raise CheckinError("未捕获到签到接口响应")
+
+
 def extract_action_fields(text: str) -> tuple[Optional[bool], str, str]:
     """从 Server Action 返回 JSON 中提取 success / message / description。"""
     normalized = compact(text)
@@ -554,7 +586,12 @@ def extract_action_fields(text: str) -> tuple[Optional[bool], str, str]:
     for chunk in payload:
         if not isinstance(chunk, dict):
             continue
-        current = chunk.get("error") if isinstance(chunk.get("error"), dict) else chunk
+        if isinstance(chunk.get("response"), dict):
+            current = chunk["response"]
+        elif isinstance(chunk.get("error"), dict):
+            current = chunk["error"]
+        else:
+            current = chunk
         if not isinstance(current, dict):
             continue
 
@@ -565,7 +602,7 @@ def extract_action_fields(text: str) -> tuple[Optional[bool], str, str]:
         if not description and isinstance(current.get("description"), str):
             description = current["description"]
 
-    return success, message, description or normalized[:200]
+    return success, message, description
 
 
 def status_emoji(status: str) -> str:
@@ -618,24 +655,29 @@ def perform_checkin(page: Page, account: AccountConfig) -> CheckinResult:
         raise CheckinError(f"在菜单中未找到 '{sign_label}' 选项")
 
     log(f"触发动作: {sign_label}...")
-    
-    # 监听 Server Action 请求响应，超时增加到 60s
-    with page.expect_response(
-        lambda res: res.request.method == "POST"
-        and res.url.rstrip("/") == BASE_URL.rstrip("/")
-        and bool(res.request.headers.get("next-action")),
-        timeout=60_000,
-    ) as response_info:
-        item.click(force=True)
 
-    response = response_info.value
-    log(f"收到服务器响应，HTTP 状态码: {response.status}")
-    
-    page.wait_for_timeout(2_500)
+    action_responses: list[Any] = []
 
-    raw_response = decode_response_text(response)
+    def collect_response(response) -> None:
+        if is_checkin_action_response(response):
+            action_responses.append(response)
+
+    page.on("response", collect_response)
+    try:
+        with page.expect_response(is_checkin_action_response, timeout=60_000) as response_info:
+            item.click(force=True)
+
+        first_response = response_info.value
+        if first_response not in action_responses:
+            action_responses.append(first_response)
+        page.wait_for_timeout(5_000)
+    finally:
+        page.remove_listener("response", collect_response)
+
+    response, raw_response, response_success, message, description = select_action_response(action_responses)
+    log(f"捕获到 {len(action_responses)} 个服务器响应，选用 HTTP 状态码: {response.status}")
     log(f"raw_response: {raw_response}")
-    response_success, message, description = extract_action_fields(raw_response)
+
     if response_success is True:
         status = "success"
     elif response_success is False:
