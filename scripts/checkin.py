@@ -262,6 +262,7 @@ class CheckinResult:
     sign_type: str
     sign_label: str
     status: str
+    response_success: Optional[bool]
     message: str
     description: str
     response_status: Optional[int] = None
@@ -460,79 +461,121 @@ def menu_sign_item(page: Page, sign_label: str):
     return page.get_by_text(sign_label, exact=False).first
 
 
+def repair_mojibake_text(value: str) -> str:
+    """
+    修复常见的 UTF-8 / Latin-1 串码。
+    站点的 Server Action 响应里，JSON 字符串字段偶尔会以乱码形式出现，
+    例如 “ç­¾å°å¤±è´¥”，这里统一尝试修复一次。
+    """
+    if not isinstance(value, str) or not value:
+        return value
+
+    suspicious_chars = ("ç", "ä", "å", "ï", "é", "â", "Ã", "Â")
+    if not any(ch in value for ch in suspicious_chars):
+        return value
+
+    raw_bytes = bytearray()
+    try:
+        for char in value:
+            codepoint = ord(char)
+            if codepoint <= 0xFF:
+                raw_bytes.append(codepoint)
+            else:
+                raw_bytes.extend(char.encode("cp1252"))
+        return raw_bytes.decode("utf-8")
+    except Exception:
+        return value
+
+
+def normalize_response_payload(value: Any) -> Any:
+    """递归修复响应 JSON 中的乱码字符串。"""
+    if isinstance(value, dict):
+        return {key: normalize_response_payload(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [normalize_response_payload(item) for item in value]
+    if isinstance(value, str):
+        return repair_mojibake_text(value)
+    return value
+
+
 def decode_response_text(response) -> str:
     """
-    处理后端返回的 Next.js Server Action 响应内容。
-    由于可能存在编码问题（Mojibake），会尝试进行一次 UTF-8 修复。
+    解析 Next.js Server Action 的分片响应。
+    原始格式通常是：
+      0:{...}\n
+      1:{...}\n
+    这里会把每个分片解析成 JSON 对象，并修复对象中的乱码字段，
+    最终返回一个标准 JSON 数组字符串，便于后续统一解析。
     """
     try:
         raw = response.body()
     except Exception:
         return ""
 
-    text = raw.decode("utf-8", errors="replace")
-    # 如果文本中看起来像乱码（且没有“签到”关键字），尝试进行修复
-    if "签到" not in text and any(ch in text for ch in ("ç", "ä", "å", "ï", "é")):
+    raw_text = raw.decode("utf-8", errors="replace")
+    chunks: list[Any] = []
+
+    for line in raw_text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+
+        match = re.match(r"^\d+:(.*)$", line)
+        payload_text = match.group(1) if match else line
+        payload_text = payload_text.strip()
+        if not payload_text:
+            continue
+
         try:
-            repaired = text.encode("latin-1", errors="ignore").decode("utf-8", errors="ignore")
-            if repaired:
-                text = repaired
-        except Exception:
-            pass
-    return text
+            parsed = json.loads(payload_text)
+            chunks.append(normalize_response_payload(parsed))
+        except json.JSONDecodeError:
+            chunks.append(repair_mojibake_text(payload_text))
+
+    if chunks:
+        return json.dumps(chunks, ensure_ascii=False)
+
+    return repair_mojibake_text(raw_text)
 
 
-def extract_field(text: str, field: str) -> str:
-    """从响应文本中提取特定 JSON 字段的值"""
-    match = re.search(rf'"{re.escape(field)}":"([^"]*)"', text)
-    if not match:
-        return ""
-    return match.group(1)
-
-
-def repair_partial_text(value: str) -> str:
-    """修复站点返回的一些常见截断或不规范的字符串"""
-    if not value:
-        return value
-    fixed = value
-    if fixed == "签失败":
-        fixed = "签到失败"
-    if fixed == "签成功":
-        fixed = "签到成功"
-    if "已经签" in fixed and "天来吧" in fixed:
-        fixed = "你已经签到过了，明天再来吧"
-    return fixed
-
-
-def parse_action_result(text: str) -> tuple[str, str, str]:
-    """解析 Server Action 的返回结果并判断状态"""
+def extract_action_fields(text: str) -> tuple[Optional[bool], str, str]:
+    """从 Server Action 返回 JSON 中提取 success / message / description。"""
     normalized = compact(text)
-    message = repair_partial_text(extract_field(normalized, "message"))
-    description = repair_partial_text(extract_field(normalized, "description"))
+    try:
+        payload = json.loads(normalized)
+    except json.JSONDecodeError:
+        return None, "", normalized[:200]
 
-    if '"success":true' in normalized and '"error"' not in normalized:
-        return "success", message or "签到成功", description
-    
-    if (
-        "已经签到过了" in normalized
-        or "明天再来吧" in normalized
-        or "已经签到过了" in description
-        or "明天再来吧" in description
-        or "再来吧" in description
-    ):
-        return "already_signed", "今日已签到", description or "你已经签到过了，明天再来吧"
-    
-    if '"success":false' in normalized or '"error"' in normalized:
-        return "failed", message or "签到失败", description or "站点返回失败"
-        
-    return "unknown", message or "未知结果", description or normalized[:200]
+    if isinstance(payload, dict):
+        payload = [payload]
+    if not isinstance(payload, list):
+        return None, "", normalized[:200]
+
+    message = ""
+    description = ""
+    success: Optional[bool] = None
+
+    for chunk in payload:
+        if not isinstance(chunk, dict):
+            continue
+        current = chunk.get("error") if isinstance(chunk.get("error"), dict) else chunk
+        if not isinstance(current, dict):
+            continue
+
+        if "success" in current and isinstance(current["success"], bool):
+            success = current["success"]
+        if not message and isinstance(current.get("message"), str):
+            message = current["message"]
+        if not description and isinstance(current.get("description"), str):
+            description = current["description"]
+
+    return success, message, description or normalized[:200]
 
 
 def status_emoji(status: str) -> str:
     """状态对应的表情符号"""
     return {
         "success": "✅",
-        "already_signed": "🟡",
         "failed": "❌",
         "unknown": "⚠️",
     }.get(status, "⚠️")
@@ -542,10 +585,16 @@ def status_label(status: str) -> str:
     """状态对应的中文描述"""
     return {
         "success": "签到成功",
-        "already_signed": "今日已签到",
-        "failed": "执行失败",
+        "failed": "签到失败",
         "unknown": "结果未知",
     }.get(status, "结果未知")
+
+
+def result_text(result: CheckinResult) -> str:
+    """直接按接口原始返回拼接结果文案。"""
+    if result.message and result.description:
+        return f"{result.message}，{result.description}"
+    return result.description or result.message or ""
 
 
 def take_screenshot(page: Page, username: str) -> Optional[str]:
@@ -589,7 +638,14 @@ def perform_checkin(page: Page, account: AccountConfig) -> CheckinResult:
     page.wait_for_timeout(2_500)
 
     raw_response = decode_response_text(response)
-    status, message, description = parse_action_result(raw_response)
+    log(f"raw_response: {raw_response}")
+    response_success, message, description = extract_action_fields(raw_response)
+    if response_success is True:
+        status = "success"
+    elif response_success is False:
+        status = "failed"
+    else:
+        status = "unknown"
     
     screenshot_path = None
     if status in {"failed", "unknown"}:
@@ -601,6 +657,7 @@ def perform_checkin(page: Page, account: AccountConfig) -> CheckinResult:
         sign_type=account.sign_type,
         sign_label=sign_label,
         status=status,
+        response_success=response_success,
         message=message,
         description=description,
         response_status=response.status,
@@ -612,9 +669,7 @@ def perform_checkin(page: Page, account: AccountConfig) -> CheckinResult:
 
 def format_result_line(result: CheckinResult) -> str:
     """格式化打印到控制台的结果行"""
-    detail = result.message or status_label(result.status)
-    if result.description:
-        detail = f"{detail} - {result.description}"
+    detail = result_text(result) or status_label(result.status)
     emoji = status_emoji(result.status)
     return f"{emoji} [{result.status.upper()}] {result.display_name} ({result.sign_label}) -> {detail}"
 
@@ -654,7 +709,6 @@ def build_telegram_message(chat_results: list[CheckinResult]) -> str:
     """构建 Telegram 推送消息的 HTML 内容"""
     counts = {
         "success": sum(result.status == "success" for result in chat_results),
-        "already_signed": sum(result.status == "already_signed" for result in chat_results),
         "failed": sum(result.status == "failed" for result in chat_results),
         "unknown": sum(result.status == "unknown" for result in chat_results),
     }
@@ -666,7 +720,6 @@ def build_telegram_message(chat_results: list[CheckinResult]) -> str:
         (
             "📊 <b>统计汇总</b>："
             f"成功 {counts['success']} / "
-            f"已签 {counts['already_signed']} / "
             f"失败 {counts['failed']} / "
             f"未知 {counts['unknown']}"
         ),
@@ -677,9 +730,7 @@ def build_telegram_message(chat_results: list[CheckinResult]) -> str:
         lines.append(f"{index}. {status_emoji(result.status)} <b>{escape_html(result.display_name)}</b>")
         lines.append(f"└ 类型：<code>{escape_html(result.sign_label)}</code>")
         lines.append(f"└ 状态：<b>{escape_html(status_label(result.status))}</b>")
-        lines.append(f"└ 结果：{escape_html(result.message or status_label(result.status))}")
-        if result.description:
-            lines.append(f"└ 说明：{escape_html(result.description)}")
+        lines.append(f"└ 结果：{escape_html(result_text(result) or status_label(result.status))}")
         if result.screenshot_path:
             lines.append(f"└ 截图路径：<code>{escape_html(result.screenshot_path)}</code>")
         lines.append("")
@@ -749,7 +800,7 @@ def write_github_summary(results: list[CheckinResult]) -> None:
     for result in results:
         lines.append(
             f"| {result.display_name} | {result.sign_label} | {status_label(result.status)} | "
-            f"{result.message} {result.description}".strip()
+            f"{result_text(result)}".strip()
             + " |"
         )
     Path(summary_path).write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -788,6 +839,7 @@ def main() -> int:
                             sign_type=account.sign_type,
                             sign_label=SIGN_TYPE_TO_LABEL[account.sign_type],
                             status="failed",
+                            response_success=None,
                             message="执行失败",
                             description=str(exc),
                             screenshot_path=screenshot_path,
