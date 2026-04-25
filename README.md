@@ -123,6 +123,7 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 
 - `artifacts/latest-results.json`
 - 失败场景下的截图 PNG
+- 失败场景下的浏览器诊断 JSON
 - GitHub Actions Summary 表格
 - GitHub Actions Artifact：`hdhive-artifacts`
 
@@ -130,5 +131,5 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 
 - GitHub Actions 下不要依赖 Playwright 自带 `Chromium`
 - 当前工作流使用 `browser-actions/setup-chrome` 安装 `Chrome for Testing`
-- 当前工作流还会通过 `xvfb-run` 启动非 headless Chrome，并附带额外启动参数
-- 这样更容易绕过 HDHive 对默认自动化环境的识别
+- 当前工作流还会通过 `xvfb-run` 启动非 headless Chrome，并把失败时的浏览器诊断一并上传
+- 本地成功而 GitHub 失败时，优先对比 artifact 中的截图和诊断 JSON

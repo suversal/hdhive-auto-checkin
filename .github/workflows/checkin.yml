@@ -19,7 +19,7 @@ jobs:
       TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
       HDHIVE_HEADLESS: "false"
       HDHIVE_TIMEZONE: "Asia/Shanghai"
-      HDHIVE_BROWSER_ARGS: "--disable-blink-features=AutomationControlled --disable-dev-shm-usage --no-sandbox --window-size=1440,900"
+      HDHIVE_BROWSER_ARGS: "--disable-dev-shm-usage --no-sandbox --window-size=1440,900"
     steps:
       - uses: actions/checkout@v6
 

@@ -127,8 +127,6 @@ def load_accounts() -> list[AccountConfig]:
 
 def build_context(browser: Browser):
     context = browser.new_context(
-        user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
         locale="zh-CN",
         timezone_id=TZ,
         viewport={"width": 1440, "height": 900},
@@ -136,10 +134,15 @@ def build_context(browser: Browser):
     context.add_init_script(
         """
         Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-        Object.defineProperty(navigator, 'platform', { get: () => 'MacIntel' });
-        Object.defineProperty(navigator, 'language', { get: () => 'zh-CN' });
-        Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en-US', 'en'] });
-        window.chrome = { runtime: {} };
+        window.chrome = window.chrome || { runtime: {} };
+        const originalQuery = window.navigator.permissions && window.navigator.permissions.query;
+        if (originalQuery) {
+          window.navigator.permissions.query = (parameters) => (
+            parameters && parameters.name === 'notifications'
+              ? Promise.resolve({ state: Notification.permission })
+              : originalQuery(parameters)
+          );
+        }
         """
     )
     return context
@@ -173,6 +176,68 @@ def wait_for_login_form(page: Page) -> None:
 
 def compact(text: str) -> str:
     return " ".join(text.split())
+
+
+def safe_file_stem(value: str) -> str:
+    return re.sub(r"[^a-zA-Z0-9_.-]+", "_", value)
+
+
+def write_browser_diagnostics(page: Page, username: str, stage: str) -> Optional[str]:
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+    path = ARTIFACTS_DIR / f"{safe_file_stem(username)}-{stage}-diagnostics.json"
+    try:
+        data = page.evaluate(
+            """() => {
+                const canvas = document.createElement('canvas');
+                const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+                let webglVendor = null;
+                let webglRenderer = null;
+                if (gl) {
+                  const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+                  if (debugInfo) {
+                    webglVendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL);
+                    webglRenderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+                  }
+                }
+                return {
+                  location: window.location.href,
+                  title: document.title,
+                  navigator: {
+                    userAgent: navigator.userAgent,
+                    platform: navigator.platform,
+                    language: navigator.language,
+                    languages: navigator.languages,
+                    vendor: navigator.vendor,
+                    webdriver: navigator.webdriver,
+                    hardwareConcurrency: navigator.hardwareConcurrency,
+                    deviceMemory: navigator.deviceMemory || null,
+                    pluginsLength: navigator.plugins.length
+                  },
+                  window: {
+                    innerWidth: window.innerWidth,
+                    innerHeight: window.innerHeight,
+                    outerWidth: window.outerWidth,
+                    outerHeight: window.outerHeight,
+                    devicePixelRatio: window.devicePixelRatio
+                  },
+                  screen: {
+                    width: window.screen.width,
+                    height: window.screen.height,
+                    availWidth: window.screen.availWidth,
+                    availHeight: window.screen.availHeight,
+                    colorDepth: window.screen.colorDepth
+                  },
+                  webgl: {
+                    vendor: webglVendor,
+                    renderer: webglRenderer
+                  }
+                };
+            }"""
+        )
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+        return str(path)
+    except Exception:
+        return None
 
 
 def dismiss_notice(page: Page) -> None:
@@ -288,7 +353,7 @@ def status_label(status: str) -> str:
 
 def take_screenshot(page: Page, username: str) -> Optional[str]:
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
-    safe_name = re.sub(r"[^a-zA-Z0-9_.-]+", "_", username)
+    safe_name = safe_file_stem(username)
     path = ARTIFACTS_DIR / f"{safe_name}-{int(time.time())}.png"
     try:
         page.screenshot(path=str(path), full_page=True)
@@ -492,6 +557,7 @@ def main() -> int:
                         result = perform_checkin(page, account)
                     except Exception as exc:
                         screenshot_path = take_screenshot(page, account.username)
+                        write_browser_diagnostics(page, account.username, "failure")
                         result = CheckinResult(
                             username=account.username,
                             display_name=account.name or account.username,
