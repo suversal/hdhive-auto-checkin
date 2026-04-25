@@ -15,9 +15,27 @@
 - `scripts/checkin.py`：签到主脚本
 - `.github/workflows/checkin.yml`：GitHub Actions 工作流
 - `requirements.txt`：Python 依赖
+- `local.config.example.json`：本地配置模板
 - `artifacts/`：结果文件和失败截图目录
 
 ## Configuration
+
+### Local File First
+
+本地运行时，脚本会优先读取仓库根目录下的 `local.config.json`。  
+如果这个文件不存在，才会继续读取 GitHub Actions / shell 环境变量。
+
+推荐本地使用方式：
+
+1. 复制模板文件
+2. 填入你自己的账号和 Telegram 信息
+3. 直接在 IDEA 里运行 `scripts/checkin.py`
+
+```bash
+cp local.config.example.json local.config.json
+```
+
+`local.config.json` 已经加入 `.gitignore`，不会被提交到 git。
 
 ### GitHub Secrets
 
@@ -70,9 +88,10 @@
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
-export HDHIVE_ACCOUNTS_JSON='[{"username":"your@example.com","password":"your-password","sign_type":"daily"}]'
 python scripts/checkin.py
 ```
+
+如果你使用 `local.config.json`，通常不需要再手动导出账号相关环境变量。
 
 如果浏览器不在默认位置，可以指定：
 
@@ -88,6 +107,12 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 - `HDHIVE_TIMEZONE`：默认 `Asia/Shanghai`
 - `TELEGRAM_BOT_TOKEN`：Telegram Bot Token
 - `TELEGRAM_CHAT_ID`：默认 Telegram Chat ID
+
+本地文件与环境变量的优先级：
+
+1. `local.config.json`
+2. 环境变量
+3. 代码默认值
 
 ## GitHub Actions
 

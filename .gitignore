@@ -3,3 +3,4 @@ __pycache__/
 artifacts/
 *.pyc
 .idea/
+local.config.json

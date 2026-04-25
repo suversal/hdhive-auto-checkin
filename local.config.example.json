@@ -1,0 +1,17 @@
+{
+  "base_url": "https://hdhive.com",
+  "headless": "false",
+  "sign_type": "daily",
+  "timezone": "Asia/Shanghai",
+  "telegram_bot_token": "your-telegram-bot-token",
+  "telegram_chat_id": "your-default-chat-id",
+  "accounts": [
+    {
+      "name": "account1",
+      "username": "your@example.com",
+      "password": "your-password",
+      "sign_type": "daily",
+      "telegram_chat_id": "your-chat-id"
+    }
+  ]
+}

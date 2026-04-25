@@ -17,18 +17,57 @@ from urllib.request import Request, urlopen
 from playwright.sync_api import Browser, Page, Playwright, TimeoutError, sync_playwright
 
 
-BASE_URL = os.getenv("HDHIVE_BASE_URL", "https://hdhive.com").rstrip("/")
-LOGIN_URL = f"{BASE_URL}/login"
-DEFAULT_SIGN_TYPE = os.getenv("HDHIVE_SIGN_TYPE", "daily").strip().lower()
-HEADLESS = os.getenv("HDHIVE_HEADLESS", "true").strip().lower() != "false"
-BROWSER_PATH = os.getenv("HDHIVE_BROWSER_PATH", "").strip() or None
-BROWSER_CHANNEL = os.getenv("HDHIVE_BROWSER_CHANNEL", "chrome").strip() or None
-BROWSER_ARGS = shlex.split(os.getenv("HDHIVE_BROWSER_ARGS", "").strip())
-TZ = os.getenv("HDHIVE_TIMEZONE", "Asia/Shanghai").strip() or "Asia/Shanghai"
-ARTIFACTS_DIR = Path(os.getenv("HDHIVE_ARTIFACTS_DIR", "artifacts"))
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+LOCAL_CONFIG_ENV = "HDHIVE_LOCAL_CONFIG_PATH"
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_LOCAL_CONFIG_PATH = PROJECT_ROOT / "local.config.json"
 ACCOUNTS_ENV = "HDHIVE_ACCOUNTS_JSON"
+
+
+def load_local_config() -> tuple[Path, dict[str, Any]]:
+    """Load an optional local JSON config file for IDE/local runs.
+
+    The local file is intentionally checked before GitHub Actions env vars so
+    local debugging can be done without exporting a long list of variables.
+    """
+    raw_path = os.getenv(LOCAL_CONFIG_ENV, str(DEFAULT_LOCAL_CONFIG_PATH))
+    path = Path(raw_path).expanduser()
+    if not path.is_absolute():
+        path = (PROJECT_ROOT / path).resolve()
+    if not path.exists():
+        return path, {}
+
+    try:
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise CheckinError(f"Invalid JSON in local config file {path}: {exc}") from exc
+
+    if not isinstance(parsed, dict):
+        raise CheckinError(f"Local config file {path} must contain a JSON object")
+    return path, parsed
+
+
+def get_config_value(env_name: str, default: str = "", local_key: Optional[str] = None) -> str:
+    """Read config from local file first, then environment variables, then default."""
+    key = local_key or env_name.lower()
+    local_value = LOCAL_CONFIG.get(key)
+    if local_value is not None:
+        return str(local_value).strip()
+    return os.getenv(env_name, default).strip()
+
+
+LOCAL_CONFIG_PATH, LOCAL_CONFIG = load_local_config()
+
+BASE_URL = get_config_value("HDHIVE_BASE_URL", "https://hdhive.com", "base_url").rstrip("/")
+LOGIN_URL = f"{BASE_URL}/login"
+DEFAULT_SIGN_TYPE = get_config_value("HDHIVE_SIGN_TYPE", "daily", "sign_type").lower()
+HEADLESS = get_config_value("HDHIVE_HEADLESS", "true", "headless").lower() != "false"
+BROWSER_PATH = get_config_value("HDHIVE_BROWSER_PATH", "", "browser_path") or None
+BROWSER_CHANNEL = get_config_value("HDHIVE_BROWSER_CHANNEL", "chrome", "browser_channel") or None
+BROWSER_ARGS = shlex.split(get_config_value("HDHIVE_BROWSER_ARGS", "", "browser_args"))
+TZ = get_config_value("HDHIVE_TIMEZONE", "Asia/Shanghai", "timezone") or "Asia/Shanghai"
+ARTIFACTS_DIR = Path(get_config_value("HDHIVE_ARTIFACTS_DIR", "artifacts", "artifacts_dir"))
+TELEGRAM_BOT_TOKEN = get_config_value("TELEGRAM_BOT_TOKEN", "", "telegram_bot_token")
+TELEGRAM_CHAT_ID = get_config_value("TELEGRAM_CHAT_ID", "", "telegram_chat_id")
 
 SIGN_TYPE_TO_LABEL = {
     "daily": "每日签到",
@@ -69,6 +108,7 @@ def log(message: str) -> None:
 
 
 def normalize_sign_type(value: str) -> str:
+    """Normalize user-facing sign type aliases into the two internal modes."""
     sign_type = (value or DEFAULT_SIGN_TYPE).strip().lower()
     aliases = {
         "day": "daily",
@@ -88,14 +128,19 @@ def normalize_sign_type(value: str) -> str:
 
 
 def load_accounts() -> list[AccountConfig]:
-    raw = os.getenv(ACCOUNTS_ENV, "").strip()
-    if not raw:
-        raise CheckinError(f"Missing required environment variable: {ACCOUNTS_ENV}")
-
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        raise CheckinError(f"Invalid JSON in {ACCOUNTS_ENV}: {exc}") from exc
+    """Load accounts from local config first, then GitHub Actions environment."""
+    if "accounts" in LOCAL_CONFIG:
+        parsed = LOCAL_CONFIG["accounts"]
+    else:
+        raw = os.getenv(ACCOUNTS_ENV, "").strip()
+        if not raw:
+            raise CheckinError(
+                f"Missing account config. Use {LOCAL_CONFIG_PATH} locally or set {ACCOUNTS_ENV} in CI."
+            )
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError as exc:
+            raise CheckinError(f"Invalid JSON in {ACCOUNTS_ENV}: {exc}") from exc
 
     if isinstance(parsed, dict):
         parsed = [parsed]
@@ -126,7 +171,15 @@ def load_accounts() -> list[AccountConfig]:
 
 
 def build_context(browser: Browser):
+    """Create the browser context using the headless settings that previously
+    worked in local testing.
+
+    This intentionally mirrors the earlier successful local experiment before
+    we started changing CI-specific fingerprint details.
+    """
     context = browser.new_context(
+        user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
         locale="zh-CN",
         timezone_id=TZ,
         viewport={"width": 1440, "height": 900},
@@ -134,21 +187,21 @@ def build_context(browser: Browser):
     context.add_init_script(
         """
         Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-        window.chrome = window.chrome || { runtime: {} };
-        const originalQuery = window.navigator.permissions && window.navigator.permissions.query;
-        if (originalQuery) {
-          window.navigator.permissions.query = (parameters) => (
-            parameters && parameters.name === 'notifications'
-              ? Promise.resolve({ state: Notification.permission })
-              : originalQuery(parameters)
-          );
-        }
+        Object.defineProperty(navigator, 'platform', { get: () => 'MacIntel' });
+        Object.defineProperty(navigator, 'language', { get: () => 'zh-CN' });
+        Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en-US', 'en'] });
+        window.chrome = { runtime: {} };
         """
     )
     return context
 
 
 def launch_browser(playwright: Playwright) -> Browser:
+    """Launch the browser using either an explicit path or a named channel.
+
+    GitHub Actions uses a provided Chrome binary path, while local runs can
+    usually rely on the default channel without extra configuration.
+    """
     launch_kwargs: dict[str, Any] = {"headless": HEADLESS}
     if BROWSER_PATH:
         launch_kwargs["executable_path"] = BROWSER_PATH
@@ -165,6 +218,11 @@ def launch_browser(playwright: Playwright) -> Browser:
 
 
 def wait_for_login_form(page: Page) -> None:
+    """Open the login page and make sure the actual form is present.
+
+    This is the earliest place where we can detect 'site error page' failures
+    caused by browser fingerprinting or blocked environments.
+    """
     page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=30_000)
     page.wait_for_timeout(6_000)
     try:
@@ -183,6 +241,7 @@ def safe_file_stem(value: str) -> str:
 
 
 def write_browser_diagnostics(page: Page, username: str, stage: str) -> Optional[str]:
+    """Persist a lightweight browser fingerprint snapshot for CI debugging."""
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     path = ARTIFACTS_DIR / f"{safe_file_stem(username)}-{stage}-diagnostics.json"
     try:
@@ -241,6 +300,11 @@ def write_browser_diagnostics(page: Page, username: str, stage: str) -> Optional
 
 
 def dismiss_notice(page: Page) -> None:
+    """Close the blocking announcement dialog when it appears.
+
+    The dialog button is disabled for a short countdown, so we poll until the
+    button becomes clickable instead of clicking once and failing.
+    """
     button = page.get_by_role("button", name=re.compile(r"我知道了"))
     if button.count() == 0:
         return
@@ -257,6 +321,7 @@ def dismiss_notice(page: Page) -> None:
 
 
 def login(page: Page, account: AccountConfig) -> None:
+    """Complete the interactive login flow and wait for the user menu."""
     wait_for_login_form(page)
     page.locator("input").nth(0).fill(account.username)
     page.locator("input").nth(1).fill(account.password)
@@ -271,12 +336,18 @@ def login(page: Page, account: AccountConfig) -> None:
 
 
 def menu_sign_item(page: Page, sign_label: str):
+    """Open the user menu and return the desired sign-in menu entry."""
     page.locator('button[aria-label="用户菜单"]').click(force=True)
     page.wait_for_timeout(1_500)
     return page.get_by_text(sign_label, exact=False).first
 
 
 def decode_response_text(response) -> str:
+    """Decode the Next.js server action response body.
+
+    The site sometimes returns mojibake-like text, so we attempt a second pass
+    repair when the first UTF-8 decode clearly looks broken.
+    """
     try:
         raw = response.body()
     except Exception:
@@ -301,6 +372,7 @@ def extract_field(text: str, field: str) -> str:
 
 
 def repair_partial_text(value: str) -> str:
+    """Repair a few recurring truncated strings returned by the site."""
     if not value:
         return value
     fixed = value
@@ -352,6 +424,7 @@ def status_label(status: str) -> str:
 
 
 def take_screenshot(page: Page, username: str) -> Optional[str]:
+    """Capture the current page for later debugging."""
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     safe_name = safe_file_stem(username)
     path = ARTIFACTS_DIR / f"{safe_name}-{int(time.time())}.png"
@@ -363,6 +436,7 @@ def take_screenshot(page: Page, username: str) -> Optional[str]:
 
 
 def perform_checkin(page: Page, account: AccountConfig) -> CheckinResult:
+    """Click the configured sign-in menu item and parse the server action result."""
     sign_label = SIGN_TYPE_TO_LABEL[account.sign_type]
     item = menu_sign_item(page, sign_label)
     try:
@@ -432,6 +506,7 @@ def send_telegram_message(chat_id: str, message: str) -> None:
 
 
 def build_chat_map(accounts: list[AccountConfig]) -> dict[str, Optional[str]]:
+    """Resolve the effective Telegram target for each account."""
     chat_map: dict[str, Optional[str]] = {}
     for account in accounts:
         chat_map[account.username] = account.telegram_chat_id or TELEGRAM_CHAT_ID or None
@@ -439,6 +514,7 @@ def build_chat_map(accounts: list[AccountConfig]) -> dict[str, Optional[str]]:
 
 
 def build_telegram_message(chat_results: list[CheckinResult]) -> str:
+    """Build a compact but readable Telegram summary message."""
     counts = {
         "success": sum(result.status == "success" for result in chat_results),
         "already_signed": sum(result.status == "already_signed" for result in chat_results),
@@ -475,6 +551,7 @@ def build_telegram_message(chat_results: list[CheckinResult]) -> str:
 
 
 def notify(results: list[CheckinResult], accounts: list[AccountConfig]) -> None:
+    """Send grouped Telegram notifications after all accounts finish."""
     if not TELEGRAM_BOT_TOKEN:
         log("Telegram disabled: TELEGRAM_BOT_TOKEN is not set")
         return
@@ -502,6 +579,7 @@ def escape_html(value: str) -> str:
 
 
 def write_results(results: list[CheckinResult]) -> Path:
+    """Write the latest machine-readable run result to artifacts/latest-results.json."""
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     path = ARTIFACTS_DIR / "latest-results.json"
     payload = {
@@ -514,6 +592,7 @@ def write_results(results: list[CheckinResult]) -> Path:
 
 
 def write_github_summary(results: list[CheckinResult]) -> None:
+    """Write a short markdown summary for the GitHub Actions run page."""
     summary_path = os.getenv("GITHUB_STEP_SUMMARY", "").strip()
     if not summary_path:
         return
@@ -536,6 +615,7 @@ def write_github_summary(results: list[CheckinResult]) -> None:
 
 
 def main() -> int:
+    """Entry point used by both local IDE runs and GitHub Actions."""
     try:
         accounts = load_accounts()
     except CheckinError as exc:
