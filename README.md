@@ -38,17 +38,16 @@
 ```json
 [
   {
-    "name": "主账号",
     "username": "user1@example.com",
     "password": "password1",
     "sign_type": "daily",
     "telegram_chat_id": "123456789"
   },
   {
-    "name": "小号",
     "username": "user2@example.com",
     "password": "password2",
-    "sign_type": "gamble"
+    "sign_type": "gamble",
+    "telegram_chat_id": "123456789"
   }
 ]
 ```

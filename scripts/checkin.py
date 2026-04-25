@@ -36,7 +36,6 @@ class AccountConfig:
     username: str
     password: str
     sign_type: str = "daily"
-    name: Optional[str] = None
     telegram_chat_id: Optional[str] = None
 
 def load_local_config() -> tuple[Path, dict[str, Any]]:
@@ -258,7 +257,6 @@ DIAGNOSTICS_EVAL_SCRIPT = """() => {
 class CheckinResult:
     """签到结果信息类"""
     username: str
-    display_name: str
     sign_type: str
     sign_label: str
     status: str
@@ -323,14 +321,12 @@ def load_accounts() -> list[AccountConfig]:
         if not username or not password:
             raise CheckinError("账号和密码不能为空")
         sign_type = normalize_sign_type(str(item.get("sign_type", DEFAULT_SIGN_TYPE)))
-        name = str(item.get("name", "")).strip() or None
         telegram_chat_id = str(item.get("telegram_chat_id", "")).strip() or None
         accounts.append(
             AccountConfig(
                 username=username,
                 password=password,
                 sign_type=sign_type,
-                name=name,
                 telegram_chat_id=telegram_chat_id,
             )
         )
@@ -653,7 +649,6 @@ def perform_checkin(page: Page, account: AccountConfig) -> CheckinResult:
 
     return CheckinResult(
         username=account.username,
-        display_name=account.name or account.username,
         sign_type=account.sign_type,
         sign_label=sign_label,
         status=status,
@@ -671,7 +666,7 @@ def format_result_line(result: CheckinResult) -> str:
     """格式化打印到控制台的结果行"""
     detail = result_text(result) or status_label(result.status)
     emoji = status_emoji(result.status)
-    return f"{emoji} [{result.status.upper()}] {result.display_name} ({result.sign_label}) -> {detail}"
+    return f"{emoji} [{result.status.upper()}] {result.username} ({result.sign_label}) -> {detail}"
 
 
 def send_telegram_message(chat_id: str, message: str) -> None:
@@ -728,11 +723,11 @@ def build_telegram_message(chat_results: list[CheckinResult]) -> str:
     ]
 
     for index, result in enumerate(chat_results, start=1):
-        lines.append(f"<b>{index}. 👥 {escape_html(result.display_name)}</b>")
-        lines.append(f"├ 📧 账号：<code>{escape_html(result.username)}</code>")
+        lines.append(f"<b>👥 </b>")
+        lines.append(f"⎡ 📧 账号：<code>{escape_html(result.username)}</code>")
         lines.append(f"├ 🏷️ 类型：<code>{escape_html(result.sign_label)}</code>")
         lines.append(f"├ 📌 状态：<b>{escape_html(status_label(result.status))}</b>")
-        lines.append(f"└ 📝 结果：{escape_html(result_text(result) or status_label(result.status))}")
+        lines.append(f"⎣ 📝 结果：{escape_html(result_text(result) or status_label(result.status))}")
         lines.append("")
 
     lines.append("━━━━━━━━━━━━━━━━━━")
@@ -800,7 +795,7 @@ def write_github_summary(results: list[CheckinResult]) -> None:
     ]
     for result in results:
         lines.append(
-            f"| {result.display_name} | {result.sign_label} | {status_label(result.status)} | "
+            f"| {result.username} | {result.sign_label} | {status_label(result.status)} | "
             f"{result_text(result)}".strip()
             + " |"
         )
@@ -836,7 +831,6 @@ def main() -> int:
                         write_browser_diagnostics(page, account.username, "failure")
                         result = CheckinResult(
                             username=account.username,
-                            display_name=account.name or account.username,
                             sign_type=account.sign_type,
                             sign_label=SIGN_TYPE_TO_LABEL[account.sign_type],
                             status="failed",

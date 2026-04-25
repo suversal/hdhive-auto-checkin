@@ -7,7 +7,6 @@
   "telegram_chat_id": "your-default-chat-id",
   "accounts": [
     {
-      "name": "account1",
       "username": "your@example.com",
       "password": "your-password",
       "sign_type": "daily",
