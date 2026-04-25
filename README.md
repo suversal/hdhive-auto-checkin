@@ -1,93 +1,96 @@
-# HDHive Auto Check-in
+# 🐝 HDHive Auto Check-in
 
-使用 `Python + Playwright` 自动登录 HDHive 并执行签到，避免手动维护动态 `Next_Action`。
+基于 `Python + Playwright` 编写的 HDHive 自动化签到工具。
 
-## Features
+由于 HDHive 站点使用了 Next.js Server Actions，其请求头中包含了动态的 `Next_Action` 校验参数，使用传统的纯 HTTP 请求（如 requests/curl）进行模拟非常繁琐且极易失效。本项目通过 Playwright 驱动真实浏览器进行自动化操作，完美绕过动态参数校验，实现极其稳定的自动化签到。
 
-- 支持多个账号顺序签到
-- 支持 `daily` 和 `gamble` 两种签到模式
-- 支持 GitHub Actions 定时执行和手动触发
-- 支持 Telegram 结果通知
-- 失败时自动保存截图和结果 JSON
+> 💡 **备选方案**：如果你更倾向于使用轻量级的纯 HTTP 请求方案（直接获取并处理 `Next_Action`），可以查看我的另一个仓库：suversal/auto-check。
 
-## Repository Layout
+---
 
-- `scripts/checkin.py`：签到主脚本
-- `.github/workflows/checkin.yml`：GitHub Actions 工作流
-- `requirements.txt`：Python 依赖
-- `local.config.example.json`：本地配置模板
-- `artifacts/`：结果文件和失败截图目录
+## ✨ 核心特性
 
-## Configuration
+- 🔄 **多账号支持**：支持配置多个账号，按顺序依次执行签到，互不干扰。
+- 🎲 **多模式签到**：支持 `daily`（常规每日签到）和 `gamble`（赌狗签到）两种模式。
+- ☁️ **开箱即用的 CI**：内置 GitHub Actions 工作流，支持定时自动执行和手动触发。
+- 📢 **结果通知**：支持集成 Telegram Bot，签到结束后汇总并推送详细结果。
+- 🛡️ **异常捕获与排障**：运行失败时，会自动将网页截图和浏览器诊断 JSON 保存到 Artifacts 中，极大降低排错成本。
+- 🕵️ **反指纹侦测**：内置浏览器指纹混淆脚本，有效降低被站点防火墙拦截的概率。
 
-### Local File First
+---
 
-本地运行时，脚本会优先读取仓库根目录下的 `local.config.json`。  
-如果这个文件不存在，才会继续读取 GitHub Actions / shell 环境变量。
+## 🚀 部署指引 (GitHub Actions)
 
-推荐本地使用方式：
+推荐使用 GitHub Actions 进行部署，无需自备服务器，完全免费。
 
-1. 复制模板文件
-2. 填入你自己的账号和 Telegram 信息
-3. 直接在 IDEA 里运行 `scripts/checkin.py`
+### 1. Fork 本仓库
+点击页面右上角的 `Fork` 按钮，将本项目 Fork 到你自己的 GitHub 账号下。
 
-```bash
-cp local.config.example.json local.config.json
-```
+### 2. 配置 Secrets 和 Variables
+在你的仓库页面，进入 **Settings** -> **Secrets and variables** -> **Actions**。
 
-`local.config.json` 已经加入 `.gitignore`，不会被提交到 git。
+#### 🔐 添加 Repository Secrets (机密信息，不可见)
+- `HDHIVE_ACCOUNTS_JSON` **(必填)**: 你的 HDHive 账号配置，格式要求为 JSON 数组。
+- `TELEGRAM_BOT_TOKEN` (可选): 如果你需要 Telegram 推送，填入你的 Bot Token。
 
-### GitHub Secrets
-
-- `HDHIVE_ACCOUNTS_JSON`
-- `TELEGRAM_BOT_TOKEN`，可选
-
-### GitHub Variables
-
-- `HDHIVE_SIGN_TYPE`，可选，默认签到类型，支持 `daily` 或 `gamble`
-- `TELEGRAM_CHAT_ID`，可选，默认 Telegram 接收人
-
-### `HDHIVE_ACCOUNTS_JSON` Example
-
+**`HDHIVE_ACCOUNTS_JSON` 配置示例：**
 ```json
 [
   {
-    "name": "main",
+    "name": "主账号",
     "username": "user1@example.com",
     "password": "password1",
     "sign_type": "daily",
     "telegram_chat_id": "123456789"
   },
   {
-    "name": "backup",
+    "name": "小号",
     "username": "user2@example.com",
     "password": "password2",
     "sign_type": "gamble"
   }
 ]
 ```
+*优先级说明：账号内配置的 `sign_type` 和 `telegram_chat_id` 会覆盖全局配置。*
 
-字段说明：
+#### 🌐 添加 Repository Variables (普通变量，可见)
+- `HDHIVE_SIGN_TYPE` (可选): 全局默认签到类型，可选值为 `daily` 或 `gamble`（默认 `daily`）。
+- `TELEGRAM_CHAT_ID` (可选): 全局默认的 Telegram 接收人 Chat ID。
 
-- `name`：通知里显示的账号别名，可选
-- `username`：HDHive 登录账号，必填
-- `password`：HDHive 登录密码，必填
-- `sign_type`：签到类型，可选，支持 `daily` 或 `gamble`
-- `telegram_chat_id`：单账号 Telegram Chat ID，可选
+### 3. 启用并触发 Actions 工作流
+1. 进入 **Actions** 标签页，点击 `I understand my workflows, go ahead and enable them`。
+2. 在左侧边栏点击 **HDHive Check-in**。
+3. 点击右侧的 `Run workflow` 手动执行一次，检查是否配置成功。
+4. 默认设定的定时任务为北京时间每天 **00:05** 自动执行 (`cron: "5 16 * * *"` 对应 UTC 时间)。
 
-优先级：
+---
 
-- 账号内 `sign_type` 覆盖全局 `HDHIVE_SIGN_TYPE`
-- 账号内 `telegram_chat_id` 覆盖全局 `TELEGRAM_CHAT_ID`
+## 💻 本地运行与开发
 
-## Local Run
+本地运行时，脚本会优先读取仓库根目录下的 `local.config.json`，无需繁琐地去配置环境变量。（该文件已加入 `.gitignore`，不会被误提交）
 
-建议本地优先使用 Chrome：
+### 环境准备
+
+1. 要求 **Python 3.10+**
+2. 复制配置文件模板并完善你的账号信息：
+   ```bash
+   cp local.config.example.json local.config.json
+   ```
+
+### 依赖安装与执行
 
 ```bash
+# 创建并激活虚拟环境 (推荐)
 python3 -m venv .venv
 source .venv/bin/activate
+
+# 安装依赖
 python -m pip install -r requirements.txt
+
+# 安装 Playwright 对应的 Chromium 浏览器内核
+playwright install chromium
+
+# 运行脚本
 python scripts/checkin.py
 ```
 
