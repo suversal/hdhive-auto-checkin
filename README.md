@@ -1,10 +1,12 @@
 # 🐝 HDHive Auto Check-in
 
-基于 `Python + Playwright` 编写的 HDHive 自动化签到工具。
+<div align="center">
+  <h1>🚨 基于 `Python + Playwright` 编写的 HDHive 自动化签到工具 🚨</h1>
+  <p><b>由于 HDHive 站点使用了 Next.js Server Actions，其请求头中包含了动态的 `Next_Action` 校验参数，使用传统的纯 HTTP 请求（如 requests/curl）进行模拟非常繁琐且易失效，需要频繁抓包修改配置。故新版本通过 Playwright 驱动真实浏览器进行自动化操作，完美绕过动态参数校验，实现更加稳定的自动化签到。</b></p>
+  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin">旧版方案地址（可作为备用方案）：HDHive 自动化签到工具 (传统HTTP请求版)</a> 👈</h3>
+  <br/>
+</div>
 
-由于 HDHive 站点使用了 Next.js Server Actions，其请求头中包含了动态的 `Next_Action` 校验参数，使用传统的纯 HTTP 请求（如 requests/curl）进行模拟非常繁琐且极易失效。本项目通过 Playwright 驱动真实浏览器进行自动化操作，完美绕过动态参数校验，实现极其稳定的自动化签到。
-
-> 💡 **备选方案**：如果你更倾向于使用轻量级的纯 HTTP 请求方案（直接获取并处理 `Next_Action`），可以查看我的另一个仓库：suversal/auto-check。
 
 ---
 
