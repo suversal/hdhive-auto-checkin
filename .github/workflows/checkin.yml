@@ -1,0 +1,41 @@
+name: HDHive Check-in
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "5 16 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  checkin:
+    runs-on: ubuntu-latest
+    env:
+      TZ: Asia/Shanghai
+      HDHIVE_ACCOUNTS_JSON: ${{ secrets.HDHIVE_ACCOUNTS_JSON }}
+      HDHIVE_SIGN_TYPE: ${{ vars.HDHIVE_SIGN_TYPE }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
+      HDHIVE_HEADLESS: "true"
+      HDHIVE_TIMEZONE: "Asia/Shanghai"
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - uses: browser-actions/setup-chrome@v2
+        id: setup-chrome
+        with:
+          install-dependencies: true
+
+      - name: Install Python dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Run HDHive check-in
+        env:
+          HDHIVE_BROWSER_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
+        run: python scripts/checkin.py
