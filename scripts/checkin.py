@@ -686,7 +686,7 @@ def perform_checkin(page: Page, account: AccountConfig) -> CheckinResult:
         status = "unknown"
     
     screenshot_path = None
-    if status in {"failed", "unknown"}:
+    if response_success is None:
         screenshot_path = take_screenshot(page, account.username)
 
     return CheckinResult(
@@ -906,8 +906,9 @@ def main() -> int:
     write_github_summary(results)
     log(f"任务结束报告已保存至: {results_path}")
 
-    # 如果有任何账号失败，返回退出码 1
-    has_failures = any(result.status in {"failed", "unknown"} for result in results)
+    # 接口明确返回 success=false 属于业务结果，脚本仍视为执行成功。
+    # 只有未解析到签到结果或脚本异常时才让 GitHub Actions 失败。
+    has_failures = any(result.response_success is None for result in results)
     return 1 if has_failures else 0
 
 
