@@ -601,7 +601,7 @@ def take_screenshot(page: Page, username: str) -> Optional[str]:
     """截图当前页面，主要用于失败时的证据留存"""
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     safe_name = safe_file_stem(username)
-    path = ARTIFACTS_DIR / f"{safe_name}-{int(time.time())}.png"
+    path = ARTIFACTS_DIR / f"{safe_name}-failure.png"
     try:
         page.screenshot(path=str(path), full_page=True)
         log(f"截图已保存: {path}")
@@ -714,27 +714,28 @@ def build_telegram_message(chat_results: list[CheckinResult]) -> str:
     }
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     lines = [
-        "<b>HDHive 自动签到结果汇报</b>",
+        "<b>🧩 HDHive 自动签到</b>",
+        "━━━━━━━━━━━━━━━━━━",
         f"🕒 <b>执行时间</b>：<code>{escape_html(timestamp)}</code>",
         f"🌐 <b>目标站点</b>：<code>{escape_html(BASE_URL)}</code>",
         (
             "📊 <b>统计汇总</b>："
-            f"成功 {counts['success']} / "
-            f"失败 {counts['failed']} / "
-            f"未知 {counts['unknown']}"
+            f"成功 {counts['success']}  "
+            f"/失败 {counts['failed']}  "
+            f"/未知 {counts['unknown']}"
         ),
         "",
     ]
 
     for index, result in enumerate(chat_results, start=1):
-        lines.append(f"{index}. {status_emoji(result.status)} <b>{escape_html(result.display_name)}</b>")
-        lines.append(f"└ 类型：<code>{escape_html(result.sign_label)}</code>")
-        lines.append(f"└ 状态：<b>{escape_html(status_label(result.status))}</b>")
-        lines.append(f"└ 结果：{escape_html(result_text(result) or status_label(result.status))}")
-        if result.screenshot_path:
-            lines.append(f"└ 截图路径：<code>{escape_html(result.screenshot_path)}</code>")
+        lines.append(f"<b>{index}. 👥 {escape_html(result.display_name)}</b>")
+        lines.append(f"├ 📧 账号：<code>{escape_html(result.username)}</code>")
+        lines.append(f"├ 🏷️ 类型：<code>{escape_html(result.sign_label)}</code>")
+        lines.append(f"├ 📌 状态：<b>{escape_html(status_label(result.status))}</b>")
+        lines.append(f"└ 📝 结果：{escape_html(result_text(result) or status_label(result.status))}")
         lines.append("")
 
+    lines.append("━━━━━━━━━━━━━━━━━━")
     return "\n".join(lines).strip()
 
 
