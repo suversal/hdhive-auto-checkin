@@ -3,6 +3,7 @@
 import json
 import os
 import re
+import shlex
 import sys
 import time
 from dataclasses import asdict, dataclass
@@ -22,6 +23,7 @@ DEFAULT_SIGN_TYPE = os.getenv("HDHIVE_SIGN_TYPE", "daily").strip().lower()
 HEADLESS = os.getenv("HDHIVE_HEADLESS", "true").strip().lower() != "false"
 BROWSER_PATH = os.getenv("HDHIVE_BROWSER_PATH", "").strip() or None
 BROWSER_CHANNEL = os.getenv("HDHIVE_BROWSER_CHANNEL", "chrome").strip() or None
+BROWSER_ARGS = shlex.split(os.getenv("HDHIVE_BROWSER_ARGS", "").strip())
 TZ = os.getenv("HDHIVE_TIMEZONE", "Asia/Shanghai").strip() or "Asia/Shanghai"
 ARTIFACTS_DIR = Path(os.getenv("HDHIVE_ARTIFACTS_DIR", "artifacts"))
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
@@ -149,7 +151,13 @@ def launch_browser(playwright: Playwright) -> Browser:
         launch_kwargs["executable_path"] = BROWSER_PATH
     elif BROWSER_CHANNEL:
         launch_kwargs["channel"] = BROWSER_CHANNEL
-    log(f"Launching browser with headless={HEADLESS}, browser_path={BROWSER_PATH or '-'}, channel={BROWSER_CHANNEL or '-'}")
+    if BROWSER_ARGS:
+        launch_kwargs["args"] = BROWSER_ARGS
+    log(
+        "Launching browser with "
+        f"headless={HEADLESS}, browser_path={BROWSER_PATH or '-'}, "
+        f"channel={BROWSER_CHANNEL or '-'}, args={' '.join(BROWSER_ARGS) or '-'}"
+    )
     return playwright.chromium.launch(**launch_kwargs)
 
 

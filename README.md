@@ -97,7 +97,7 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 
 - 使用 `ubuntu-latest`
 - 安装 `Chrome for Testing`
-- 执行 `python scripts/checkin.py`
+- 通过 `xvfb-run` 以非 headless 方式执行 `python scripts/checkin.py`
 - 支持 `workflow_dispatch`
 - 默认 `cron` 为 `5 16 * * *`
 
@@ -124,9 +124,11 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 - `artifacts/latest-results.json`
 - 失败场景下的截图 PNG
 - GitHub Actions Summary 表格
+- GitHub Actions Artifact：`hdhive-artifacts`
 
 ## Notes
 
 - GitHub Actions 下不要依赖 Playwright 自带 `Chromium`
 - 当前工作流使用 `browser-actions/setup-chrome` 安装 `Chrome for Testing`
+- 当前工作流还会通过 `xvfb-run` 启动非 headless Chrome，并附带额外启动参数
 - 这样更容易绕过 HDHive 对默认自动化环境的识别

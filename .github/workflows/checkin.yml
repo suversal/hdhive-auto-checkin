@@ -17,8 +17,9 @@ jobs:
       HDHIVE_SIGN_TYPE: ${{ vars.HDHIVE_SIGN_TYPE }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
-      HDHIVE_HEADLESS: "true"
+      HDHIVE_HEADLESS: "false"
       HDHIVE_TIMEZONE: "Asia/Shanghai"
+      HDHIVE_BROWSER_ARGS: "--disable-blink-features=AutomationControlled --disable-dev-shm-usage --no-sandbox --window-size=1440,900"
     steps:
       - uses: actions/checkout@v6
 
@@ -38,4 +39,12 @@ jobs:
       - name: Run HDHive check-in
         env:
           HDHIVE_BROWSER_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
-        run: python scripts/checkin.py
+        run: xvfb-run -a python scripts/checkin.py
+
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hdhive-artifacts
+          path: artifacts/
+          if-no-files-found: ignore
