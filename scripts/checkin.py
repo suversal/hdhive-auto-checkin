@@ -190,7 +190,102 @@ def build_context(browser: Browser):
         Object.defineProperty(navigator, 'platform', { get: () => 'MacIntel' });
         Object.defineProperty(navigator, 'language', { get: () => 'zh-CN' });
         Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en-US', 'en'] });
+        Object.defineProperty(navigator, 'vendor', { get: () => 'Google Inc.' });
+        Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
+        Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+        Object.defineProperty(navigator, 'maxTouchPoints', { get: () => 0 });
+        Object.defineProperty(screen, 'colorDepth', { get: () => 24 });
+        Object.defineProperty(screen, 'pixelDepth', { get: () => 24 });
         window.chrome = { runtime: {} };
+
+        if (navigator.userAgentData) {
+          Object.defineProperty(navigator, 'userAgentData', {
+            get: () => ({
+              brands: [
+                { brand: 'Google Chrome', version: '135' },
+                { brand: 'Chromium', version: '135' },
+                { brand: 'Not.A/Brand', version: '24' }
+              ],
+              mobile: false,
+              platform: 'macOS',
+              getHighEntropyValues: async (hints) => {
+                const values = {
+                  architecture: 'x86',
+                  bitness: '64',
+                  formFactors: ['Desktop'],
+                  fullVersionList: [
+                    { brand: 'Google Chrome', version: '135.0.0.0' },
+                    { brand: 'Chromium', version: '135.0.0.0' },
+                    { brand: 'Not.A/Brand', version: '24.0.0.0' }
+                  ],
+                  model: '',
+                  platform: 'macOS',
+                  platformVersion: '10.15.7',
+                  uaFullVersion: '135.0.0.0',
+                  wow64: false
+                };
+                const out = {};
+                for (const hint of hints || []) out[hint] = values[hint];
+                return out;
+              }
+            })
+          });
+        }
+
+        const makePluginArray = () => {
+          const plugins = [
+            { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
+            { name: 'Chrome PDF Viewer', filename: 'mhjfbmdgcfjbbpaeojofohoefgiehjai', description: '' },
+            { name: 'Native Client', filename: 'internal-nacl-plugin', description: '' }
+          ];
+          plugins.item = (index) => plugins[index] || null;
+          plugins.namedItem = (name) => plugins.find((p) => p.name === name) || null;
+          return plugins;
+        };
+        Object.defineProperty(navigator, 'plugins', { get: () => makePluginArray() });
+
+        const patchPermissions = () => {
+          const originalQuery = navigator.permissions && navigator.permissions.query;
+          if (!originalQuery) return;
+          navigator.permissions.query = (parameters) => (
+            parameters && parameters.name === 'notifications'
+              ? Promise.resolve({ state: Notification.permission })
+              : originalQuery(parameters)
+          );
+        };
+        patchPermissions();
+
+        const patchWebGL = (prototype) => {
+          if (!prototype || prototype.__hdhive_patched__) return;
+          const originalGetParameter = prototype.getParameter;
+          const originalGetExtension = prototype.getExtension;
+          const debugInfo = {
+            UNMASKED_VENDOR_WEBGL: 37445,
+            UNMASKED_RENDERER_WEBGL: 37446
+          };
+
+          prototype.getExtension = function(name) {
+            if (name === 'WEBGL_debug_renderer_info') {
+              return debugInfo;
+            }
+            return originalGetExtension.apply(this, arguments);
+          };
+
+          prototype.getParameter = function(parameter) {
+            if (parameter === debugInfo.UNMASKED_VENDOR_WEBGL) {
+              return 'Intel Inc.';
+            }
+            if (parameter === debugInfo.UNMASKED_RENDERER_WEBGL) {
+              return 'Intel(R) Iris OpenGL Engine';
+            }
+            return originalGetParameter.apply(this, arguments);
+          };
+
+          Object.defineProperty(prototype, '__hdhive_patched__', { value: true });
+        };
+
+        patchWebGL(window.WebGLRenderingContext && window.WebGLRenderingContext.prototype);
+        patchWebGL(window.WebGL2RenderingContext && window.WebGL2RenderingContext.prototype);
         """
     )
     return context
