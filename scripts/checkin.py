@@ -16,47 +16,69 @@ from urllib.request import Request, urlopen
 
 from playwright.sync_api import Browser, Page, Playwright, TimeoutError, sync_playwright
 
-
+# --- 全局常量与路径配置 ---
 LOCAL_CONFIG_ENV = "HDHIVE_LOCAL_CONFIG_PATH"
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_LOCAL_CONFIG_PATH = PROJECT_ROOT / "local.config.json"
 ACCOUNTS_ENV = "HDHIVE_ACCOUNTS_JSON"
 
+class CheckinError(Exception):
+    """自定义异常类"""
+    pass
+
+def log(message: str) -> None:
+    """标准日志打印函数"""
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {message}", flush=True)
+
+@dataclass
+class AccountConfig:
+    """账号配置信息类"""
+    username: str
+    password: str
+    sign_type: str = "daily"
+    name: Optional[str] = None
+    telegram_chat_id: Optional[str] = None
 
 def load_local_config() -> tuple[Path, dict[str, Any]]:
-    """Load an optional local JSON config file for IDE/local runs.
-
-    The local file is intentionally checked before GitHub Actions env vars so
-    local debugging can be done without exporting a long list of variables.
+    """
+    加载本地 JSON 配置文件（local.config.json）。
+    优先级说明：本地配置文件优于环境变量，方便本地调试。
     """
     raw_path = os.getenv(LOCAL_CONFIG_ENV, str(DEFAULT_LOCAL_CONFIG_PATH))
     path = Path(raw_path).expanduser()
     if not path.is_absolute():
         path = (PROJECT_ROOT / path).resolve()
+    
     if not path.exists():
         return path, {}
 
     try:
         parsed = json.loads(path.read_text(encoding="utf-8"))
+        log(f"成功加载本地配置: {path}")
     except json.JSONDecodeError as exc:
-        raise CheckinError(f"Invalid JSON in local config file {path}: {exc}") from exc
+        raise CheckinError(f"本地配置文件 JSON 格式错误 {path}: {exc}") from exc
 
     if not isinstance(parsed, dict):
-        raise CheckinError(f"Local config file {path} must contain a JSON object")
+        raise CheckinError(f"本地配置文件 {path} 必须是 JSON 对象格式")
     return path, parsed
 
-
 def get_config_value(env_name: str, default: str = "", local_key: Optional[str] = None) -> str:
-    """Read config from local file first, then environment variables, then default."""
+    """
+    配置读取助手：
+    1. 优先读取 local.config.json
+    2. 其次读取环境变量
+    3. 最后返回默认值
+    """
     key = local_key or env_name.lower()
     local_value = LOCAL_CONFIG.get(key)
     if local_value is not None:
         return str(local_value).strip()
     return os.getenv(env_name, default).strip()
 
-
+# 初始化配置
 LOCAL_CONFIG_PATH, LOCAL_CONFIG = load_local_config()
 
+# 读取各项运行参数
 BASE_URL = get_config_value("HDHIVE_BASE_URL", "https://hdhive.com", "base_url").rstrip("/")
 LOGIN_URL = f"{BASE_URL}/login"
 DEFAULT_SIGN_TYPE = get_config_value("HDHIVE_SIGN_TYPE", "daily", "sign_type").lower()
@@ -74,6 +96,8 @@ SIGN_TYPE_TO_LABEL = {
     "gamble": "赌狗签到",
 }
 
+# --- 浏览器指纹伪装脚本 ---
+# 用于绕过站点的自动化检测（反爬虫/反指纹）
 FINGERPRINT_INIT_SCRIPT = """
 Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
 Object.defineProperty(navigator, 'platform', { get: () => 'MacIntel' });
@@ -87,6 +111,7 @@ Object.defineProperty(screen, 'colorDepth', { get: () => 24 });
 Object.defineProperty(screen, 'pixelDepth', { get: () => 24 });
 window.chrome = { runtime: {} };
 
+// 模拟 UserAgentData
 if (navigator.userAgentData) {
   Object.defineProperty(navigator, 'userAgentData', {
     get: () => ({
@@ -121,6 +146,7 @@ if (navigator.userAgentData) {
   });
 }
 
+// 模拟插件列表
 const makePluginArray = () => {
   const plugins = [
     { name: 'Chrome PDF Plugin', filename: 'internal-pdf-viewer', description: 'Portable Document Format' },
@@ -133,6 +159,7 @@ const makePluginArray = () => {
 };
 Object.defineProperty(navigator, 'plugins', { get: () => makePluginArray() });
 
+// 修复权限查询
 const patchPermissions = () => {
   const originalQuery = navigator.permissions && navigator.permissions.query;
   if (!originalQuery) return;
@@ -144,6 +171,7 @@ const patchPermissions = () => {
 };
 patchPermissions();
 
+// 伪装 WebGL 渲染器信息
 const patchWebGL = (prototype) => {
   if (!prototype || prototype.__hdhive_patched__) return;
   const originalGetParameter = prototype.getParameter;
@@ -177,6 +205,7 @@ patchWebGL(window.WebGLRenderingContext && window.WebGLRenderingContext.prototyp
 patchWebGL(window.WebGL2RenderingContext && window.WebGL2RenderingContext.prototype);
 """
 
+# 浏览器诊断脚本：提取当前页面的指纹信息，用于排错
 DIAGNOSTICS_EVAL_SCRIPT = """() => {
   const canvas = document.createElement('canvas');
   const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
@@ -226,16 +255,8 @@ DIAGNOSTICS_EVAL_SCRIPT = """() => {
 
 
 @dataclass
-class AccountConfig:
-    username: str
-    password: str
-    sign_type: str = DEFAULT_SIGN_TYPE
-    name: Optional[str] = None
-    telegram_chat_id: Optional[str] = None
-
-
-@dataclass
 class CheckinResult:
+    """签到结果信息类"""
     username: str
     display_name: str
     sign_type: str
@@ -249,16 +270,8 @@ class CheckinResult:
     screenshot_path: Optional[str] = None
 
 
-class CheckinError(Exception):
-    pass
-
-
-def log(message: str) -> None:
-    print(message, flush=True)
-
-
 def normalize_sign_type(value: str) -> str:
-    """Normalize user-facing sign type aliases into the two internal modes."""
+    """将用户输入的签到类型归一化为 internal 模式（daily/gamble）"""
     sign_type = (value or DEFAULT_SIGN_TYPE).strip().lower()
     aliases = {
         "day": "daily",
@@ -273,38 +286,41 @@ def normalize_sign_type(value: str) -> str:
     }
     normalized = aliases.get(sign_type)
     if not normalized:
-        raise CheckinError(f"Unsupported sign type: {value}")
+        raise CheckinError(f"不支持的签到类型: {value}")
     return normalized
 
 
 def load_accounts() -> list[AccountConfig]:
-    """Load accounts from local config first, then GitHub Actions environment."""
+    """
+    加载账号列表：
+    优先从 LOCAL_CONFIG 加载，否则读取环境变量 HDHIVE_ACCOUNTS_JSON。
+    """
     if "accounts" in LOCAL_CONFIG:
         parsed = LOCAL_CONFIG["accounts"]
     else:
         raw = os.getenv(ACCOUNTS_ENV, "").strip()
         if not raw:
             raise CheckinError(
-                f"Missing account config. Use {LOCAL_CONFIG_PATH} locally or set {ACCOUNTS_ENV} in CI."
+                f"未配置账号信息。请在 {LOCAL_CONFIG_PATH} 或环境变量 {ACCOUNTS_ENV} 中进行配置。"
             )
         try:
             parsed = json.loads(raw)
         except json.JSONDecodeError as exc:
-            raise CheckinError(f"Invalid JSON in {ACCOUNTS_ENV}: {exc}") from exc
+            raise CheckinError(f"环境变量 {ACCOUNTS_ENV} JSON 格式错误: {exc}") from exc
 
     if isinstance(parsed, dict):
         parsed = [parsed]
     if not isinstance(parsed, list) or not parsed:
-        raise CheckinError(f"{ACCOUNTS_ENV} must be a JSON array or object")
+        raise CheckinError(f"{ACCOUNTS_ENV} 必须是 JSON 数组或对象")
 
     accounts: list[AccountConfig] = []
     for item in parsed:
         if not isinstance(item, dict):
-            raise CheckinError(f"Each account in {ACCOUNTS_ENV} must be a JSON object")
+            raise CheckinError(f"每个账号配置必须是 JSON 对象")
         username = str(item.get("username", "")).strip()
         password = str(item.get("password", "")).strip()
         if not username or not password:
-            raise CheckinError("Each account requires non-empty username and password")
+            raise CheckinError("账号和密码不能为空")
         sign_type = normalize_sign_type(str(item.get("sign_type", DEFAULT_SIGN_TYPE)))
         name = str(item.get("name", "")).strip() or None
         telegram_chat_id = str(item.get("telegram_chat_id", "")).strip() or None
@@ -317,16 +333,12 @@ def load_accounts() -> list[AccountConfig]:
                 telegram_chat_id=telegram_chat_id,
             )
         )
+    log(f"成功加载 {len(accounts)} 个账号")
     return accounts
 
 
 def build_context(browser: Browser):
-    """Create the browser context using the headless settings that previously
-    worked in local testing.
-
-    This intentionally mirrors the earlier successful local experiment before
-    we started changing CI-specific fingerprint details.
-    """
+    """创建浏览器上下文，注入指纹伪装脚本"""
     context = browser.new_context(
         user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36",
@@ -334,18 +346,13 @@ def build_context(browser: Browser):
         timezone_id=TZ,
         viewport={"width": 1440, "height": 900},
     )
-    # Keep the spoofing bundle centralized so local and CI runs share the same
-    # browser fingerprint assumptions.
+    # 注入防侦测脚本
     context.add_init_script(FINGERPRINT_INIT_SCRIPT)
     return context
 
 
 def launch_browser(playwright: Playwright) -> Browser:
-    """Launch the browser using either an explicit path or a named channel.
-
-    GitHub Actions uses a provided Chrome binary path, while local runs can
-    usually rely on the default channel without extra configuration.
-    """
+    """启动浏览器实例"""
     launch_kwargs: dict[str, Any] = {"headless": HEADLESS}
     if BROWSER_PATH:
         launch_kwargs["executable_path"] = BROWSER_PATH
@@ -353,63 +360,67 @@ def launch_browser(playwright: Playwright) -> Browser:
         launch_kwargs["channel"] = BROWSER_CHANNEL
     if BROWSER_ARGS:
         launch_kwargs["args"] = BROWSER_ARGS
-    log(
-        "Launching browser with "
-        f"headless={HEADLESS}, browser_path={BROWSER_PATH or '-'}, "
-        f"channel={BROWSER_CHANNEL or '-'}, args={' '.join(BROWSER_ARGS) or '-'}"
-    )
+    
+    log(f"正在启动浏览器... Headless: {HEADLESS}, 渠道: {BROWSER_CHANNEL or '默认'}")
+    if BROWSER_PATH:
+        log(f"自定义执行路径: {BROWSER_PATH}")
+        
     return playwright.chromium.launch(**launch_kwargs)
 
 
 def wait_for_login_form(page: Page) -> None:
-    """Open the login page and make sure the actual form is present.
-
-    This is the earliest place where we can detect 'site error page' failures
-    caused by browser fingerprinting or blocked environments.
-    """
+    """访问登录页面并等待表单渲染"""
+    log(f"正在访问登录页面: {LOGIN_URL}")
     page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=30_000)
+    
+    # 预留一定时间等待前端渲染
     page.wait_for_timeout(6_000)
+    
     try:
+        # 等待密码输入框出现
         page.locator("input").nth(1).wait_for(timeout=15_000)
     except TimeoutError as exc:
         body_text = compact(page.locator("body").inner_text())
-        raise CheckinError(f"Login form did not appear: {body_text}") from exc
+        log(f"登录页面加载超时，页面内容摘要: {body_text[:200]}...")
+        raise CheckinError(f"未能在页面上找到登录表单，可能被防火墙拦截。") from exc
 
 
 def compact(text: str) -> str:
+    """去除文本中的多余空白"""
     return " ".join(text.split())
 
 
 def safe_file_stem(value: str) -> str:
+    """将字符串转换为安全的文件名"""
     return re.sub(r"[^a-zA-Z0-9_.-]+", "_", value)
 
 
 def write_browser_diagnostics(page: Page, username: str, stage: str) -> Optional[str]:
-    """Persist a lightweight browser fingerprint snapshot for CI debugging."""
+    """保存浏览器诊断信息 JSON 文件"""
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     path = ARTIFACTS_DIR / f"{safe_file_stem(username)}-{stage}-diagnostics.json"
     try:
         data = page.evaluate(DIAGNOSTICS_EVAL_SCRIPT)
         path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
         return str(path)
-    except Exception:
+    except Exception as e:
+        log(f"无法保存诊断信息: {e}")
         return None
 
 
 def dismiss_notice(page: Page) -> None:
-    """Close the blocking announcement dialog when it appears.
-
-    The dialog button is disabled for a short countdown, so we poll until the
-    button becomes clickable instead of clicking once and failing.
-    """
+    """尝试关闭首页的公告/通知弹窗"""
     button = page.get_by_role("button", name=re.compile(r"我知道了"))
     if button.count() == 0:
         return
+    
+    log("发现公告弹窗，正在尝试关闭...")
     deadline = time.time() + 12
     while time.time() < deadline:
         try:
             if button.first.is_enabled():
                 button.first.click(force=True, timeout=2_000)
+                log("成功关闭公告")
                 page.wait_for_timeout(800)
                 return
         except Exception:
@@ -418,32 +429,41 @@ def dismiss_notice(page: Page) -> None:
 
 
 def login(page: Page, account: AccountConfig) -> None:
-    """Complete the interactive login flow and wait for the user menu."""
+    """执行登录流程"""
     wait_for_login_form(page)
+    
+    log(f"正在输入账号: {account.username}")
     page.locator("input").nth(0).fill(account.username)
     page.locator("input").nth(1).fill(account.password)
+    
+    log("点击登录按钮...")
     page.get_by_role("button", name="登录").click()
+    
     try:
-        page.locator('button[aria-label="用户菜单"]').wait_for(timeout=20_000)
+        # 登录成功的标志是出现用户菜单
+        page.locator('button[aria-label="用户菜单"]').wait_for(timeout=40_000)
+        log("登录成功！")
     except TimeoutError as exc:
         body_text = compact(page.locator("body").inner_text())
-        raise CheckinError(f"Login failed or user menu not found: {body_text}") from exc
+        log(f"登录失败，页面内容: {body_text[:200]}...")
+        raise CheckinError(f"登录超时或失败，未进入主界面。") from exc
+    
     page.wait_for_timeout(2_000)
     dismiss_notice(page)
 
 
 def menu_sign_item(page: Page, sign_label: str):
-    """Open the user menu and return the desired sign-in menu entry."""
+    """在用户菜单中寻找对应的签到项"""
+    log("打开用户菜单...")
     page.locator('button[aria-label="用户菜单"]').click(force=True)
     page.wait_for_timeout(1_500)
     return page.get_by_text(sign_label, exact=False).first
 
 
 def decode_response_text(response) -> str:
-    """Decode the Next.js server action response body.
-
-    The site sometimes returns mojibake-like text, so we attempt a second pass
-    repair when the first UTF-8 decode clearly looks broken.
+    """
+    处理后端返回的 Next.js Server Action 响应内容。
+    由于可能存在编码问题（Mojibake），会尝试进行一次 UTF-8 修复。
     """
     try:
         raw = response.body()
@@ -451,6 +471,7 @@ def decode_response_text(response) -> str:
         return ""
 
     text = raw.decode("utf-8", errors="replace")
+    # 如果文本中看起来像乱码（且没有“签到”关键字），尝试进行修复
     if "签到" not in text and any(ch in text for ch in ("ç", "ä", "å", "ï", "é")):
         try:
             repaired = text.encode("latin-1", errors="ignore").decode("utf-8", errors="ignore")
@@ -462,6 +483,7 @@ def decode_response_text(response) -> str:
 
 
 def extract_field(text: str, field: str) -> str:
+    """从响应文本中提取特定 JSON 字段的值"""
     match = re.search(rf'"{re.escape(field)}":"([^"]*)"', text)
     if not match:
         return ""
@@ -469,7 +491,7 @@ def extract_field(text: str, field: str) -> str:
 
 
 def repair_partial_text(value: str) -> str:
-    """Repair a few recurring truncated strings returned by the site."""
+    """修复站点返回的一些常见截断或不规范的字符串"""
     if not value:
         return value
     fixed = value
@@ -483,12 +505,14 @@ def repair_partial_text(value: str) -> str:
 
 
 def parse_action_result(text: str) -> tuple[str, str, str]:
+    """解析 Server Action 的返回结果并判断状态"""
     normalized = compact(text)
     message = repair_partial_text(extract_field(normalized, "message"))
     description = repair_partial_text(extract_field(normalized, "description"))
 
     if '"success":true' in normalized and '"error"' not in normalized:
         return "success", message or "签到成功", description
+    
     if (
         "已经签到过了" in normalized
         or "明天再来吧" in normalized
@@ -497,12 +521,15 @@ def parse_action_result(text: str) -> tuple[str, str, str]:
         or "再来吧" in description
     ):
         return "already_signed", "今日已签到", description or "你已经签到过了，明天再来吧"
+    
     if '"success":false' in normalized or '"error"' in normalized:
         return "failed", message or "签到失败", description or "站点返回失败"
+        
     return "unknown", message or "未知结果", description or normalized[:200]
 
 
 def status_emoji(status: str) -> str:
+    """状态对应的表情符号"""
     return {
         "success": "✅",
         "already_signed": "🟡",
@@ -512,6 +539,7 @@ def status_emoji(status: str) -> str:
 
 
 def status_label(status: str) -> str:
+    """状态对应的中文描述"""
     return {
         "success": "签到成功",
         "already_signed": "今日已签到",
@@ -521,39 +549,48 @@ def status_label(status: str) -> str:
 
 
 def take_screenshot(page: Page, username: str) -> Optional[str]:
-    """Capture the current page for later debugging."""
+    """截图当前页面，主要用于失败时的证据留存"""
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     safe_name = safe_file_stem(username)
     path = ARTIFACTS_DIR / f"{safe_name}-{int(time.time())}.png"
     try:
         page.screenshot(path=str(path), full_page=True)
+        log(f"截图已保存: {path}")
         return str(path)
-    except Exception:
+    except Exception as e:
+        log(f"截图失败: {e}")
         return None
 
 
 def perform_checkin(page: Page, account: AccountConfig) -> CheckinResult:
-    """Click the configured sign-in menu item and parse the server action result."""
+    """执行点击签到并捕获网络响应"""
     sign_label = SIGN_TYPE_TO_LABEL[account.sign_type]
     item = menu_sign_item(page, sign_label)
+    
     try:
-        item.wait_for(timeout=8_000)
-    except TimeoutError as exc:
-        raise CheckinError(f"Could not find sign-in menu item: {sign_label}") from exc
+        item.wait_for(timeout=20_000)
+    except TimeoutError:
+        raise CheckinError(f"在菜单中未找到 '{sign_label}' 选项")
 
+    log(f"触发动作: {sign_label}...")
+    
+    # 监听 Server Action 请求响应，超时增加到 60s
     with page.expect_response(
         lambda res: res.request.method == "POST"
         and res.url.rstrip("/") == BASE_URL.rstrip("/")
         and bool(res.request.headers.get("next-action")),
-        timeout=15_000,
+        timeout=60_000,
     ) as response_info:
         item.click(force=True)
 
     response = response_info.value
+    log(f"收到服务器响应，HTTP 状态码: {response.status}")
+    
     page.wait_for_timeout(2_500)
 
     raw_response = decode_response_text(response)
     status, message, description = parse_action_result(raw_response)
+    
     screenshot_path = None
     if status in {"failed", "unknown"}:
         screenshot_path = take_screenshot(page, account.username)
@@ -574,13 +611,16 @@ def perform_checkin(page: Page, account: AccountConfig) -> CheckinResult:
 
 
 def format_result_line(result: CheckinResult) -> str:
+    """格式化打印到控制台的结果行"""
     detail = result.message or status_label(result.status)
     if result.description:
         detail = f"{detail} - {result.description}"
-    return f"[{result.status}] {result.display_name} ({result.sign_label}) {detail}"
+    emoji = status_emoji(result.status)
+    return f"{emoji} [{result.status.upper()}] {result.display_name} ({result.sign_label}) -> {detail}"
 
 
 def send_telegram_message(chat_id: str, message: str) -> None:
+    """通过 Telegram Bot API 发送消息"""
     if not TELEGRAM_BOT_TOKEN:
         return
     payload = urlencode(
@@ -599,11 +639,11 @@ def send_telegram_message(chat_id: str, message: str) -> None:
     )
     with urlopen(request, timeout=20) as response:
         if response.status >= 400:
-            raise CheckinError(f"Telegram API returned status {response.status}")
+            raise CheckinError(f"Telegram API 响应错误，状态码: {response.status}")
 
 
 def build_chat_map(accounts: list[AccountConfig]) -> dict[str, Optional[str]]:
-    """Resolve the effective Telegram target for each account."""
+    """确定每个账号的消息推送目标 Chat ID"""
     chat_map: dict[str, Optional[str]] = {}
     for account in accounts:
         chat_map[account.username] = account.telegram_chat_id or TELEGRAM_CHAT_ID or None
@@ -611,7 +651,7 @@ def build_chat_map(accounts: list[AccountConfig]) -> dict[str, Optional[str]]:
 
 
 def build_telegram_message(chat_results: list[CheckinResult]) -> str:
-    """Build a compact but readable Telegram summary message."""
+    """构建 Telegram 推送消息的 HTML 内容"""
     counts = {
         "success": sum(result.status == "success" for result in chat_results),
         "already_signed": sum(result.status == "already_signed" for result in chat_results),
@@ -620,11 +660,11 @@ def build_telegram_message(chat_results: list[CheckinResult]) -> str:
     }
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     lines = [
-        "<b>HDHive 自动签到结果</b>",
-        f"🕒 <b>时间</b>：<code>{escape_html(timestamp)}</code>",
-        f"🌐 <b>站点</b>：<code>{escape_html(BASE_URL)}</code>",
+        "<b>HDHive 自动签到结果汇报</b>",
+        f"🕒 <b>执行时间</b>：<code>{escape_html(timestamp)}</code>",
+        f"🌐 <b>目标站点</b>：<code>{escape_html(BASE_URL)}</code>",
         (
-            "📊 <b>汇总</b>："
+            "📊 <b>统计汇总</b>："
             f"成功 {counts['success']} / "
             f"已签 {counts['already_signed']} / "
             f"失败 {counts['failed']} / "
@@ -635,22 +675,22 @@ def build_telegram_message(chat_results: list[CheckinResult]) -> str:
 
     for index, result in enumerate(chat_results, start=1):
         lines.append(f"{index}. {status_emoji(result.status)} <b>{escape_html(result.display_name)}</b>")
-        lines.append(f"类型：<code>{escape_html(result.sign_label)}</code>")
-        lines.append(f"状态：<b>{escape_html(status_label(result.status))}</b>")
-        lines.append(f"结果：{escape_html(result.message or status_label(result.status))}")
+        lines.append(f"└ 类型：<code>{escape_html(result.sign_label)}</code>")
+        lines.append(f"└ 状态：<b>{escape_html(status_label(result.status))}</b>")
+        lines.append(f"└ 结果：{escape_html(result.message or status_label(result.status))}")
         if result.description:
-            lines.append(f"说明：{escape_html(result.description)}")
+            lines.append(f"└ 说明：{escape_html(result.description)}")
         if result.screenshot_path:
-            lines.append(f"截图：<code>{escape_html(result.screenshot_path)}</code>")
+            lines.append(f"└ 截图路径：<code>{escape_html(result.screenshot_path)}</code>")
         lines.append("")
 
     return "\n".join(lines).strip()
 
 
 def notify(results: list[CheckinResult], accounts: list[AccountConfig]) -> None:
-    """Send grouped Telegram notifications after all accounts finish."""
+    """推送通知主逻辑（按 Chat ID 分组发送）"""
     if not TELEGRAM_BOT_TOKEN:
-        log("Telegram disabled: TELEGRAM_BOT_TOKEN is not set")
+        log("未配置 TELEGRAM_BOT_TOKEN，跳过推送通知。")
         return
 
     grouped: dict[str, list[CheckinResult]] = {}
@@ -662,12 +702,16 @@ def notify(results: list[CheckinResult], accounts: list[AccountConfig]) -> None:
         grouped.setdefault(chat_id, []).append(result)
 
     for chat_id, chat_results in grouped.items():
-        message = build_telegram_message(chat_results)
-        send_telegram_message(chat_id, message)
-        log(f"Telegram notification sent to chat_id={chat_id}")
+        try:
+            message = build_telegram_message(chat_results)
+            send_telegram_message(chat_id, message)
+            log(f"成功将签到结果推送到 Telegram Chat: {chat_id}")
+        except Exception as e:
+            log(f"推送 Telegram 失败 (ID: {chat_id}): {e}")
 
 
 def escape_html(value: str) -> str:
+    """转义 HTML 特殊字符"""
     return (
         value.replace("&", "&amp;")
         .replace("<", "&lt;")
@@ -676,7 +720,7 @@ def escape_html(value: str) -> str:
 
 
 def write_results(results: list[CheckinResult]) -> Path:
-    """Write the latest machine-readable run result to artifacts/latest-results.json."""
+    """将运行结果持久化到 JSON 文件中"""
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     path = ARTIFACTS_DIR / "latest-results.json"
     payload = {
@@ -689,7 +733,7 @@ def write_results(results: list[CheckinResult]) -> Path:
 
 
 def write_github_summary(results: list[CheckinResult]) -> None:
-    """Write a short markdown summary for the GitHub Actions run page."""
+    """生成 GitHub Actions 的 Job Summary 表格"""
     summary_path = os.getenv("GITHUB_STEP_SUMMARY", "").strip()
     if not summary_path:
         return
@@ -712,11 +756,13 @@ def write_github_summary(results: list[CheckinResult]) -> None:
 
 
 def main() -> int:
-    """Entry point used by both local IDE runs and GitHub Actions."""
+    """主入口"""
+    log("=== HDHive 自动化签到工具启动 ===")
+    
     try:
         accounts = load_accounts()
     except CheckinError as exc:
-        log(f"Configuration error: {exc}")
+        log(f"配置文件错误: {exc}")
         return 2
 
     results: list[CheckinResult] = []
@@ -725,14 +771,15 @@ def main() -> int:
         with sync_playwright() as playwright:
             browser = launch_browser(playwright)
             try:
-                for account in accounts:
-                    log(f"Processing {account.username} with sign_type={account.sign_type}")
+                for idx, account in enumerate(accounts, start=1):
+                    log(f"[{idx}/{len(accounts)}] 正在处理账号: {account.username} (模式: {account.sign_type})")
                     context = build_context(browser)
                     page = context.new_page()
                     try:
                         login(page, account)
                         result = perform_checkin(page, account)
                     except Exception as exc:
+                        log(f"处理账号时发生异常: {exc}")
                         screenshot_path = take_screenshot(page, account.username)
                         write_browser_diagnostics(page, account.username, "failure")
                         result = CheckinResult(
@@ -750,21 +797,27 @@ def main() -> int:
 
                     results.append(result)
                     log(format_result_line(result))
+                    
+                    # 账号之间预留一点间隔
+                    if idx < len(accounts):
+                        time.sleep(2)
             finally:
                 browser.close()
     except Exception as exc:
-        log(f"Fatal error: {exc}")
+        log(f"严重错误: {exc}")
         return 1
 
+    # 执行结果持久化与通知
     try:
         notify(results, accounts)
-    except (CheckinError, HTTPError, URLError) as exc:
-        log(f"Telegram notification failed: {exc}")
+    except Exception as exc:
+        log(f"通知环节发生错误: {exc}")
 
     results_path = write_results(results)
     write_github_summary(results)
-    log(f"Results written to {results_path}")
+    log(f"任务结束报告已保存至: {results_path}")
 
+    # 如果有任何账号失败，返回退出码 1
     has_failures = any(result.status in {"failed", "unknown"} for result in results)
     return 1 if has_failures else 0
 
