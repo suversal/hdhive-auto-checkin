@@ -61,7 +61,7 @@
 1. 进入 **Actions** 标签页，点击 `I understand my workflows, go ahead and enable them`。
 2. 在左侧边栏点击 **HDHive Check-in**。
 3. 点击右侧的 `Run workflow` 手动执行一次，检查是否配置成功。
-4. 默认设定的定时任务为北京时间每天 **00:05** 自动执行 (`cron: "5 16 * * *"` 对应 UTC 时间)。
+4. 默认设定的定时任务为北京时间每天 **06:23** 自动执行 (`cron: "23 22 * * *"` 对应 UTC 时间)。
 
 ---
 
@@ -108,7 +108,7 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 - `HDHIVE_SIGN_TYPE`：默认签到类型
 - `HDHIVE_HEADLESS`：默认 `true`
 - `HDHIVE_TIMEZONE`：默认 `Asia/Shanghai`
-- `HDHIVE_MAX_ATTEMPTS`：每个账号最大尝试次数，默认 `3`
+- `HDHIVE_MAX_ATTEMPTS`：每个账号最大尝试次数，默认 `5`
 - `HDHIVE_RETRY_BASE_DELAY_SECONDS`：重试基础等待秒数，默认 `5`，按尝试次数线性递增
 - `HDHIVE_RESPONSE_BODY_TIMEOUT_SECONDS`：读取签到接口响应 body 的最长等待秒数，默认 `15`
 - `TELEGRAM_BOT_TOKEN`：Telegram Bot Token
@@ -129,10 +129,10 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 - 使用 `ubuntu-latest`
 - 通过 Playwright 驱动 Chrome 执行 `python scripts/checkin.py`
 - 支持 `workflow_dispatch`
-- 默认 `cron` 为 `33 22 * * *`
+- 默认 `cron` 为 `23 22 * * *`
 - job 总超时为 25 分钟，签到 step 超时为 22 分钟，避免异常挂起占满 GitHub Actions 默认上限
 
-`33 22 * * *` 对应北京时间 `06:33`。
+`23 22 * * *` 对应北京时间 `06:23`。
 
 如果你想调整执行时间，直接修改 `.github/workflows/checkin.yml` 里的 `cron`。
 

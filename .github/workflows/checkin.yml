@@ -3,9 +3,9 @@ name: HDHive Check-in
 on:
   workflow_dispatch:
   schedule:
-    # 每天北京时间上午 06:33 自动运行 (UTC 0:42)
+    # 每天北京时间上午 06:23 自动运行 (UTC 22:23)
     # 避开整点和半点，能显著提高被 GitHub 触发的优先级
-    - cron: '33 1 * * *'
+    - cron: '23 22 * * *'
 
 permissions:
   contents: read

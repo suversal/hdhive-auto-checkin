@@ -95,7 +95,7 @@ TELEGRAM_CHAT_ID = get_config_value("TELEGRAM_CHAT_ID", "", "telegram_chat_id")
 RESPONSE_BODY_TIMEOUT_SECONDS = float(
     get_config_value("HDHIVE_RESPONSE_BODY_TIMEOUT_SECONDS", "15", "response_body_timeout_seconds")
 )
-MAX_CHECKIN_ATTEMPTS = max(1, int(get_config_value("HDHIVE_MAX_ATTEMPTS", "3", "max_attempts")))
+MAX_CHECKIN_ATTEMPTS = max(1, int(get_config_value("HDHIVE_MAX_ATTEMPTS", "5", "max_attempts")))
 RETRY_BASE_DELAY_SECONDS = float(
     get_config_value("HDHIVE_RETRY_BASE_DELAY_SECONDS", "5", "retry_base_delay_seconds")
 )
@@ -279,6 +279,20 @@ class CheckinResult:
     screenshot_path: Optional[str] = None
     attempt: int = 1
     elapsed_seconds: Optional[float] = None
+
+
+@dataclass
+class ResponseBodyReadResult:
+    """Detailed response-body read outcome for retry diagnostics."""
+    decoded_text: str
+    raw_text_preview: str
+    raw_bytes_len: int
+    read_status: str
+    exception_type: str = ""
+    exception_message: str = ""
+    header_content_type: str = ""
+    header_content_length: str = ""
+    header_transfer_encoding: str = ""
 
 
 class ResponseBodyTimeout(Exception):
@@ -532,23 +546,44 @@ def normalize_response_payload(value: Any) -> Any:
     return value
 
 
-def decode_response_text(response, timeout_seconds: float = RESPONSE_BODY_TIMEOUT_SECONDS) -> str:
-    """
-    解析 Next.js Server Action 的分片响应。
-    原始格式通常是：
-      0:{...}\n
-      1:{...}\n
-    这里会把每个分片解析成 JSON 对象，并修复对象中的乱码字段，
-    最终返回一个标准 JSON 数组字符串，便于后续统一解析。
-    """
+def read_response_body_result(
+    response, timeout_seconds: float = RESPONSE_BODY_TIMEOUT_SECONDS
+) -> ResponseBodyReadResult:
+    """Read and decode a response body while preserving diagnostics for empty bodies."""
+    headers = getattr(response, "headers", {}) or {}
+    content_type = str(headers.get("content-type", ""))
+    content_length = str(headers.get("content-length", ""))
+    transfer_encoding = str(headers.get("transfer-encoding", ""))
+
     try:
         with response_body_deadline(timeout_seconds):
             raw = response.body()
     except ResponseBodyTimeout as exc:
         log(str(exc))
-        return ""
-    except Exception:
-        return ""
+        return ResponseBodyReadResult(
+            decoded_text="",
+            raw_text_preview="",
+            raw_bytes_len=0,
+            read_status="timeout",
+            exception_type=type(exc).__name__,
+            exception_message=str(exc),
+            header_content_type=content_type,
+            header_content_length=content_length,
+            header_transfer_encoding=transfer_encoding,
+        )
+    except Exception as exc:
+        log(f"读取响应 body 异常: {type(exc).__name__}: {exc}")
+        return ResponseBodyReadResult(
+            decoded_text="",
+            raw_text_preview="",
+            raw_bytes_len=0,
+            read_status="exception",
+            exception_type=type(exc).__name__,
+            exception_message=str(exc),
+            header_content_type=content_type,
+            header_content_length=content_length,
+            header_transfer_encoding=transfer_encoding,
+        )
 
     raw_text = raw.decode("utf-8", errors="replace")
     chunks: list[Any] = []
@@ -570,10 +605,28 @@ def decode_response_text(response, timeout_seconds: float = RESPONSE_BODY_TIMEOU
         except json.JSONDecodeError:
             chunks.append(repair_mojibake_text(payload_text))
 
-    if chunks:
-        return json.dumps(chunks, ensure_ascii=False)
+    decoded_text = json.dumps(chunks, ensure_ascii=False) if chunks else repair_mojibake_text(raw_text)
+    return ResponseBodyReadResult(
+        decoded_text=decoded_text,
+        raw_text_preview=raw_text[:300],
+        raw_bytes_len=len(raw),
+        read_status="ok",
+        header_content_type=content_type,
+        header_content_length=content_length,
+        header_transfer_encoding=transfer_encoding,
+    )
 
-    return repair_mojibake_text(raw_text)
+
+def decode_response_text(response, timeout_seconds: float = RESPONSE_BODY_TIMEOUT_SECONDS) -> str:
+    """
+    解析 Next.js Server Action 的分片响应。
+    原始格式通常是：
+      0:{...}\n
+      1:{...}\n
+    这里会把每个分片解析成 JSON 对象，并修复对象中的乱码字段，
+    最终返回一个标准 JSON 数组字符串，便于后续统一解析。
+    """
+    return read_response_body_result(response, timeout_seconds=timeout_seconds).decoded_text
 
 
 def is_checkin_action_response(response) -> bool:
@@ -585,18 +638,20 @@ def is_checkin_action_response(response) -> bool:
     )
 
 
-def select_action_response(responses: list[Any]) -> tuple[Any, str, Optional[bool], str, str]:
+def select_action_response(
+    responses: list[Any],
+) -> tuple[Any, ResponseBodyReadResult, Optional[bool], str, str]:
     """从捕获到的 Server Action 响应中选择包含业务结果的响应。"""
-    fallback: tuple[Any, str, Optional[bool], str, str] | None = None
+    fallback: tuple[Any, ResponseBodyReadResult, Optional[bool], str, str] | None = None
 
     for response in responses:
-        raw_response = decode_response_text(response)
-        response_success, message, description = extract_action_fields(raw_response)
-        current = (response, raw_response, response_success, message, description)
+        body_result = read_response_body_result(response)
+        response_success, message, description = extract_action_fields(body_result.decoded_text)
+        current = (response, body_result, response_success, message, description)
 
         if fallback is None:
             fallback = current
-        if raw_response and (response_success is not None or message or description):
+        if body_result.decoded_text and (response_success is not None or message or description):
             return current
 
     if fallback is not None:
@@ -735,11 +790,26 @@ def perform_checkin(page: Page, account: AccountConfig, attempt: int = 1) -> Che
     finally:
         page.remove_listener("response", collect_response)
 
-    response, raw_response, response_success, message, description = select_action_response(action_responses)
+    response, body_result, response_success, message, description = select_action_response(action_responses)
+    raw_response = body_result.decoded_text
     log(
         f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 捕获到 {len(action_responses)} 个服务器响应，"
         f"选用 HTTP 状态码: {response.status}"
     )
+    log(
+        f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] body_read_status={body_result.read_status}, "
+        f"raw_bytes_len={body_result.raw_bytes_len}, "
+        f"content_type={body_result.header_content_type or '-'}, "
+        f"content_length={body_result.header_content_length or '-'}, "
+        f"transfer_encoding={body_result.header_transfer_encoding or '-'}"
+    )
+    if body_result.exception_type:
+        log(
+            f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] body_read_exception="
+            f"{body_result.exception_type}: {body_result.exception_message}"
+        )
+    if body_result.raw_text_preview:
+        log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] raw_text_preview: {body_result.raw_text_preview}")
     log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] raw_response: {raw_response}")
 
     if response_success is True:
