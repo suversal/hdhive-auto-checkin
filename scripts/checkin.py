@@ -4,12 +4,15 @@ import json
 import os
 import re
 import shlex
+import signal
 import sys
 import time
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Optional
+from types import FrameType
+from typing import Any, Iterator, Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -89,6 +92,13 @@ TZ = get_config_value("HDHIVE_TIMEZONE", "Asia/Shanghai", "timezone") or "Asia/S
 ARTIFACTS_DIR = Path(get_config_value("HDHIVE_ARTIFACTS_DIR", "artifacts", "artifacts_dir"))
 TELEGRAM_BOT_TOKEN = get_config_value("TELEGRAM_BOT_TOKEN", "", "telegram_bot_token")
 TELEGRAM_CHAT_ID = get_config_value("TELEGRAM_CHAT_ID", "", "telegram_chat_id")
+RESPONSE_BODY_TIMEOUT_SECONDS = float(
+    get_config_value("HDHIVE_RESPONSE_BODY_TIMEOUT_SECONDS", "15", "response_body_timeout_seconds")
+)
+MAX_CHECKIN_ATTEMPTS = max(1, int(get_config_value("HDHIVE_MAX_ATTEMPTS", "3", "max_attempts")))
+RETRY_BASE_DELAY_SECONDS = float(
+    get_config_value("HDHIVE_RETRY_BASE_DELAY_SECONDS", "5", "retry_base_delay_seconds")
+)
 
 SIGN_TYPE_TO_LABEL = {
     "daily": "每日签到",
@@ -267,6 +277,34 @@ class CheckinResult:
     next_action: Optional[str] = None
     raw_response: Optional[str] = None
     screenshot_path: Optional[str] = None
+    attempt: int = 1
+    elapsed_seconds: Optional[float] = None
+
+
+class ResponseBodyTimeout(Exception):
+    """Raised when Playwright waits too long for a response body to finish."""
+
+
+@contextmanager
+def response_body_deadline(timeout_seconds: float) -> Iterator[None]:
+    """Bound response.body(), which can otherwise wait forever on a stalled stream."""
+    if timeout_seconds <= 0 or not hasattr(signal, "SIGALRM"):
+        yield
+        return
+
+    previous_handler = signal.getsignal(signal.SIGALRM)
+    previous_timer = signal.getitimer(signal.ITIMER_REAL)
+
+    def handle_timeout(_signum: int, _frame: Optional[FrameType]) -> None:
+        raise ResponseBodyTimeout(f"读取响应 body 超过 {timeout_seconds:g} 秒")
+
+    signal.signal(signal.SIGALRM, handle_timeout)
+    signal.setitimer(signal.ITIMER_REAL, timeout_seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, *previous_timer)
+        signal.signal(signal.SIGALRM, previous_handler)
 
 
 def normalize_sign_type(value: str) -> str:
@@ -494,7 +532,7 @@ def normalize_response_payload(value: Any) -> Any:
     return value
 
 
-def decode_response_text(response) -> str:
+def decode_response_text(response, timeout_seconds: float = RESPONSE_BODY_TIMEOUT_SECONDS) -> str:
     """
     解析 Next.js Server Action 的分片响应。
     原始格式通常是：
@@ -504,13 +542,13 @@ def decode_response_text(response) -> str:
     最终返回一个标准 JSON 数组字符串，便于后续统一解析。
     """
     try:
-        raw = response.body()
-    except Exception:
-        try:
-            response.finished()
+        with response_body_deadline(timeout_seconds):
             raw = response.body()
-        except Exception:
-            return ""
+    except ResponseBodyTimeout as exc:
+        log(str(exc))
+        return ""
+    except Exception:
+        return ""
 
     raw_text = raw.decode("utf-8", errors="replace")
     chunks: list[Any] = []
@@ -630,11 +668,21 @@ def result_text(result: CheckinResult) -> str:
     return result.description or result.message or ""
 
 
-def take_screenshot(page: Page, username: str) -> Optional[str]:
+def should_retry_result(result: CheckinResult) -> bool:
+    """Only retry when we could not parse a definitive business result."""
+    return result.response_success is None
+
+
+def choose_retry_delay(attempt: int, base_delay_seconds: float = RETRY_BASE_DELAY_SECONDS) -> float:
+    """Use simple linear backoff so retry timing is easy to read in logs."""
+    return max(0.0, base_delay_seconds * attempt)
+
+
+def take_screenshot(page: Page, username: str, stage: str = "failure") -> Optional[str]:
     """截图当前页面，主要用于失败时的证据留存"""
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     safe_name = safe_file_stem(username)
-    path = ARTIFACTS_DIR / f"{safe_name}-failure.png"
+    path = ARTIFACTS_DIR / f"{safe_name}-{safe_file_stem(stage)}.png"
     try:
         page.screenshot(path=str(path), full_page=True)
         log(f"截图已保存: {path}")
@@ -644,7 +692,7 @@ def take_screenshot(page: Page, username: str) -> Optional[str]:
         return None
 
 
-def perform_checkin(page: Page, account: AccountConfig) -> CheckinResult:
+def perform_checkin(page: Page, account: AccountConfig, attempt: int = 1) -> CheckinResult:
     """执行点击签到并捕获网络响应"""
     sign_label = SIGN_TYPE_TO_LABEL[account.sign_type]
     item = menu_sign_item(page, sign_label)
@@ -654,18 +702,31 @@ def perform_checkin(page: Page, account: AccountConfig) -> CheckinResult:
     except TimeoutError:
         raise CheckinError(f"在菜单中未找到 '{sign_label}' 选项")
 
-    log(f"触发动作: {sign_label}...")
+    log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 触发动作: {sign_label}...")
 
     action_responses: list[Any] = []
 
     def collect_response(response) -> None:
         if is_checkin_action_response(response):
             action_responses.append(response)
+            next_action = response.request.headers.get("next-action", "")
+            log(
+                f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 捕获候选响应: "
+                f"status={response.status}, next-action={next_action[:10]}..., url={response.url}"
+            )
 
     page.on("response", collect_response)
     try:
-        with page.expect_response(is_checkin_action_response, timeout=60_000) as response_info:
-            item.click(force=True)
+        log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 等待签到 Server Action 响应...")
+        try:
+            with page.expect_response(is_checkin_action_response, timeout=60_000) as response_info:
+                item.click(force=True)
+        except TimeoutError as exc:
+            body_text = compact(page.locator("body").inner_text(timeout=3_000))
+            raise CheckinError(
+                "等待签到接口响应超时；"
+                f"当前 URL={page.url}；页面摘要={body_text[:200]}"
+            ) from exc
 
         first_response = response_info.value
         if first_response not in action_responses:
@@ -675,8 +736,11 @@ def perform_checkin(page: Page, account: AccountConfig) -> CheckinResult:
         page.remove_listener("response", collect_response)
 
     response, raw_response, response_success, message, description = select_action_response(action_responses)
-    log(f"捕获到 {len(action_responses)} 个服务器响应，选用 HTTP 状态码: {response.status}")
-    log(f"raw_response: {raw_response}")
+    log(
+        f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 捕获到 {len(action_responses)} 个服务器响应，"
+        f"选用 HTTP 状态码: {response.status}"
+    )
+    log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] raw_response: {raw_response}")
 
     if response_success is True:
         status = "success"
@@ -687,7 +751,7 @@ def perform_checkin(page: Page, account: AccountConfig) -> CheckinResult:
     
     screenshot_path = None
     if response_success is None:
-        screenshot_path = take_screenshot(page, account.username)
+        screenshot_path = take_screenshot(page, account.username, f"attempt-{attempt}-unknown")
 
     return CheckinResult(
         username=account.username,
@@ -701,6 +765,7 @@ def perform_checkin(page: Page, account: AccountConfig) -> CheckinResult:
         next_action=response.request.headers.get("next-action"),
         raw_response=raw_response[:1_000],
         screenshot_path=screenshot_path,
+        attempt=attempt,
     )
 
 
@@ -708,7 +773,81 @@ def format_result_line(result: CheckinResult) -> str:
     """格式化打印到控制台的结果行"""
     detail = result_text(result) or status_label(result.status)
     emoji = status_emoji(result.status)
-    return f"{emoji} [{result.status.upper()}] {result.username} ({result.sign_label}) -> {detail}"
+    elapsed = f", 耗时 {result.elapsed_seconds:.1f}s" if result.elapsed_seconds is not None else ""
+    return (
+        f"{emoji} [{result.status.upper()}] {result.username} ({result.sign_label}) "
+        f"attempt={result.attempt}{elapsed} -> {detail}"
+    )
+
+
+def run_account_once(browser: Browser, account: AccountConfig, attempt: int) -> CheckinResult:
+    """Run one isolated browser-context attempt for an account."""
+    start = time.monotonic()
+    context = build_context(browser)
+    page = context.new_page()
+    try:
+        log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 新建浏览器上下文，开始登录: {account.username}")
+        login(page, account)
+        result = perform_checkin(page, account, attempt)
+    except Exception as exc:
+        elapsed = time.monotonic() - start
+        log(
+            f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 处理账号时发生异常: "
+            f"{type(exc).__name__}: {exc}，耗时 {elapsed:.1f}s，当前 URL={page.url}"
+        )
+        screenshot_path = take_screenshot(page, account.username, f"attempt-{attempt}-failure")
+        write_browser_diagnostics(page, account.username, f"attempt-{attempt}-failure")
+        result = CheckinResult(
+            username=account.username,
+            sign_type=account.sign_type,
+            sign_label=SIGN_TYPE_TO_LABEL[account.sign_type],
+            status="failed",
+            response_success=None,
+            message="执行失败",
+            description=str(exc),
+            screenshot_path=screenshot_path,
+            attempt=attempt,
+            elapsed_seconds=elapsed,
+        )
+    finally:
+        try:
+            context.close()
+            log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 浏览器上下文已关闭")
+        except Exception as exc:
+            log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 关闭浏览器上下文失败: {exc}")
+
+    if result.elapsed_seconds is None:
+        result.elapsed_seconds = time.monotonic() - start
+    return result
+
+
+def run_account_with_retries(browser: Browser, account: AccountConfig) -> CheckinResult:
+    """Retry transient/unknown automation failures while avoiding business-result retries."""
+    last_result: Optional[CheckinResult] = None
+    for attempt in range(1, MAX_CHECKIN_ATTEMPTS + 1):
+        result = run_account_once(browser, account, attempt)
+        last_result = result
+        log(format_result_line(result))
+
+        if not should_retry_result(result):
+            log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 已获得明确业务结果，不再重试。")
+            return result
+
+        if attempt >= MAX_CHECKIN_ATTEMPTS:
+            log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 已达到最大尝试次数，停止重试。")
+            return result
+
+        delay = choose_retry_delay(attempt, RETRY_BASE_DELAY_SECONDS)
+        log(
+            f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 结果未知，将在 {delay:g}s 后重试；"
+            f"原因: {result_text(result) or status_label(result.status)}"
+        )
+        if delay:
+            time.sleep(delay)
+
+    if last_result is None:
+        raise CheckinError("未执行任何签到尝试")
+    return last_result
 
 
 def send_telegram_message(chat_id: str, message: str) -> None:
@@ -768,6 +907,7 @@ def build_telegram_message(chat_results: list[CheckinResult]) -> str:
         lines.append(f"<b>👥 </b>")
         lines.append(f"⎡ 📧 账号：<code>{escape_html(result.username)}</code>")
         lines.append(f"├ 🏷️ 类型：<code>{escape_html(result.sign_label)}</code>")
+        lines.append(f"├ 🔁 尝试：<code>{result.attempt}</code>")
         lines.append(f"├ 📌 状态：<b>{escape_html(status_label(result.status))}</b>")
         lines.append(f"⎣ 📝 结果：{escape_html(result_text(result) or status_label(result.status))}")
         lines.append("")
@@ -832,12 +972,14 @@ def write_github_summary(results: list[CheckinResult]) -> None:
         f"- Generated at: `{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`",
         f"- Site: `{BASE_URL}`",
         "",
-        "| Account | Sign Type | Status | Message |",
-        "| --- | --- | --- | --- |",
+        "| Account | Sign Type | Attempt | Duration | Status | Message |",
+        "| --- | --- | ---: | ---: | --- | --- |",
     ]
     for result in results:
+        duration = f"{result.elapsed_seconds:.1f}s" if result.elapsed_seconds is not None else ""
         lines.append(
-            f"| {result.username} | {result.sign_label} | {status_label(result.status)} | "
+            f"| {result.username} | {result.sign_label} | {result.attempt} | {duration} | "
+            f"{status_label(result.status)} | "
             f"{result_text(result)}".strip()
             + " |"
         )
@@ -862,30 +1004,8 @@ def main() -> int:
             try:
                 for idx, account in enumerate(accounts, start=1):
                     log(f"[{idx}/{len(accounts)}] 正在处理账号: {account.username} (模式: {account.sign_type})")
-                    context = build_context(browser)
-                    page = context.new_page()
-                    try:
-                        login(page, account)
-                        result = perform_checkin(page, account)
-                    except Exception as exc:
-                        log(f"处理账号时发生异常: {exc}")
-                        screenshot_path = take_screenshot(page, account.username)
-                        write_browser_diagnostics(page, account.username, "failure")
-                        result = CheckinResult(
-                            username=account.username,
-                            sign_type=account.sign_type,
-                            sign_label=SIGN_TYPE_TO_LABEL[account.sign_type],
-                            status="failed",
-                            response_success=None,
-                            message="执行失败",
-                            description=str(exc),
-                            screenshot_path=screenshot_path,
-                        )
-                    finally:
-                        context.close()
-
+                    result = run_account_with_retries(browser, account)
                     results.append(result)
-                    log(format_result_line(result))
                     
                     # 账号之间预留一点间隔
                     if idx < len(accounts):

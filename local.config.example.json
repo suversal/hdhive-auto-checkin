@@ -3,6 +3,9 @@
   "headless": "false",
   "sign_type": "daily",
   "timezone": "Asia/Shanghai",
+  "max_attempts": "3",
+  "retry_base_delay_seconds": "5",
+  "response_body_timeout_seconds": "15",
   "telegram_bot_token": "your-telegram-bot-token",
   "telegram_chat_id": "your-default-chat-id",
   "accounts": [

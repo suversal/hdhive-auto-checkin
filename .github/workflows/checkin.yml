@@ -13,6 +13,7 @@ permissions:
 jobs:
   checkin:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     env:
       TZ: Asia/Shanghai
       HDHIVE_ACCOUNTS_JSON: ${{ secrets.HDHIVE_ACCOUNTS_JSON }}
@@ -34,6 +35,7 @@ jobs:
         run: python -m pip install -r requirements.txt
 
       - name: Run HDHive check-in
+        timeout-minutes: 22
         run: python scripts/checkin.py
 
       - name: Upload artifacts

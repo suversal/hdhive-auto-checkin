@@ -108,6 +108,9 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 - `HDHIVE_SIGN_TYPE`：默认签到类型
 - `HDHIVE_HEADLESS`：默认 `true`
 - `HDHIVE_TIMEZONE`：默认 `Asia/Shanghai`
+- `HDHIVE_MAX_ATTEMPTS`：每个账号最大尝试次数，默认 `3`
+- `HDHIVE_RETRY_BASE_DELAY_SECONDS`：重试基础等待秒数，默认 `5`，按尝试次数线性递增
+- `HDHIVE_RESPONSE_BODY_TIMEOUT_SECONDS`：读取签到接口响应 body 的最长等待秒数，默认 `15`
 - `TELEGRAM_BOT_TOKEN`：Telegram Bot Token
 - `TELEGRAM_CHAT_ID`：默认 Telegram Chat ID
 
@@ -124,12 +127,12 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 默认行为：
 
 - 使用 `ubuntu-latest`
-- 安装 `Chrome for Testing`
-- 通过 `xvfb-run` 以非 headless 方式执行 `python scripts/checkin.py`
+- 通过 Playwright 驱动 Chrome 执行 `python scripts/checkin.py`
 - 支持 `workflow_dispatch`
-- 默认 `cron` 为 `5 16 * * *`
+- 默认 `cron` 为 `33 22 * * *`
+- job 总超时为 25 分钟，签到 step 超时为 22 分钟，避免异常挂起占满 GitHub Actions 默认上限
 
-`5 16 * * *` 对应北京时间 `00:05`。
+`33 22 * * *` 对应北京时间 `06:33`。
 
 如果你想调整执行时间，直接修改 `.github/workflows/checkin.yml` 里的 `cron`。
 
@@ -158,6 +161,5 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 ## Notes
 
 - GitHub Actions 下不要依赖 Playwright 自带 `Chromium`
-- 当前工作流使用 `browser-actions/setup-chrome` 安装 `Chrome for Testing`
-- 当前工作流还会通过 `xvfb-run` 启动非 headless Chrome，并把失败时的浏览器诊断一并上传
+- 当前工作流使用 Playwright 的 `chrome` 渠道，并把失败时的浏览器诊断一并上传
 - 本地成功而 GitHub 失败时，优先对比 artifact 中的截图和诊断 JSON
