@@ -5,7 +5,7 @@ on:
   schedule:
     # 每天北京时间上午 06:33 自动运行 (UTC 0:42)
     # 避开整点和半点，能显著提高被 GitHub 触发的优先级
-    - cron: '33 22 * * *'
+    - cron: '33 1 * * *'
 
 permissions:
   contents: read
