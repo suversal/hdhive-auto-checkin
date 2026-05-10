@@ -167,10 +167,9 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 ## Example
 - 执行日志
 <img width="1502" height="570" alt="image" src="https://github.com/user-attachments/assets/7431fb09-363f-4ba6-a3f9-3236620ac6b8" />
-- TG通知
-<img width="289" height="371" alt="image" src="https://github.com/user-attachments/assets/7e5efcdf-a70b-4ba5-8491-006d617a6885" />
 
-
+- Telegram通知
+<img width="313" height="376" alt="image" src="https://github.com/user-attachments/assets/99e28a8c-cb29-45fc-8c7c-d1e538193df7" />
 
 ## Contact
 
