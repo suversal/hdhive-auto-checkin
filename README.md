@@ -52,16 +52,19 @@
 ]
 ```
 *优先级说明：账号内配置的 `sign_type` 和 `telegram_chat_id` 会覆盖全局配置。*
+<img width="1160" height="974" alt="image" src="https://github.com/user-attachments/assets/8def8945-5277-4287-9c1a-1ea3d504600a" />
 
 #### 🌐 添加 Repository Variables (普通变量，可见)
 - `HDHIVE_SIGN_TYPE` (可选): 全局默认签到类型，可选值为 `daily` 或 `gamble`（默认 `daily`）。
 - `TELEGRAM_CHAT_ID` (可选): 全局默认的 Telegram 接收人 Chat ID。
+<img width="1132" height="1032" alt="image" src="https://github.com/user-attachments/assets/cc763710-f2de-40c7-b255-4bb3793ce3da" />
 
 ### 3. 启用并触发 Actions 工作流
 1. 进入 **Actions** 标签页，点击 `I understand my workflows, go ahead and enable them`。
 2. 在左侧边栏点击 **HDHive Check-in**。
 3. 点击右侧的 `Run workflow` 手动执行一次，检查是否配置成功。
 4. 默认设定的定时任务为北京时间每天 **06:23** 自动执行 (`cron: "23 22 * * *"` 对应 UTC 时间)。
+<img width="1983" height="650" alt="image" src="https://github.com/user-attachments/assets/cfa65129-f786-4adc-86c9-bcb8c592eeeb" />
 
 ---
 
