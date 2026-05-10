@@ -4,6 +4,7 @@ from unittest.mock import Mock, patch
 from scripts.checkin import (
     AccountConfig,
     CheckinResult,
+    build_telegram_message,
     choose_retry_delay,
     confirm_checkin_from_points_records,
     extract_today_checkin_remark,
@@ -112,6 +113,33 @@ class CheckinRetryTest(unittest.TestCase):
         self.assertEqual(click_visible.call_count, 2)
         page.wait_for_timeout.assert_any_call(2_000)
         points_title.wait_for.assert_called_once()
+
+    def test_telegram_message_distinguishes_result_source(self) -> None:
+        from_response = CheckinResult(
+            username="a@example.com",
+            sign_type="gamble",
+            sign_label="赌狗签到",
+            status="success",
+            response_success=True,
+            message="签到成功",
+            description="获得 12 积分",
+            result_source="response",
+        )
+        from_points = CheckinResult(
+            username="b@example.com",
+            sign_type="gamble",
+            sign_label="赌狗签到",
+            status="success",
+            response_success=True,
+            message="",
+            description="签到成功，获得 16 积分",
+            result_source="points_record",
+        )
+
+        message = build_telegram_message([from_response, from_points])
+
+        self.assertIn("来源：<code>接口响应</code>", message)
+        self.assertIn("来源：<code>积分记录核验</code>", message)
 
 
 if __name__ == "__main__":

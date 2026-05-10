@@ -273,6 +273,7 @@ class CheckinResult:
     response_success: Optional[bool]
     message: str
     description: str
+    result_source: str = ""
     response_status: Optional[int] = None
     next_action: Optional[str] = None
     raw_response: Optional[str] = None
@@ -808,6 +809,14 @@ def result_text(result: CheckinResult) -> str:
     return result.description or result.message or ""
 
 
+def result_source_label(result_source: str) -> str:
+    """签到结果来源的中文标签。"""
+    return {
+        "response": "接口响应",
+        "points_record": "积分记录核验",
+    }.get(result_source, "")
+
+
 def should_retry_result(result: CheckinResult) -> bool:
     """Only retry when we could not parse a definitive business result."""
     return result.response_success is None
@@ -916,6 +925,7 @@ def perform_checkin(page: Page, account: AccountConfig, attempt: int = 1) -> Che
                 response_success=True,
                 message="",
                 description=confirmed_remark,
+                result_source="points_record",
                 response_status=response.status,
                 next_action=response.request.headers.get("next-action"),
                 raw_response=raw_response[:1_000],
@@ -931,6 +941,7 @@ def perform_checkin(page: Page, account: AccountConfig, attempt: int = 1) -> Che
         response_success=response_success,
         message=message,
         description=description,
+        result_source="response" if response_success is not None else "",
         response_status=response.status,
         next_action=response.request.headers.get("next-action"),
         raw_response=raw_response[:1_000],
@@ -975,6 +986,7 @@ def run_account_once(browser: Browser, account: AccountConfig, attempt: int) -> 
             response_success=None,
             message="执行失败",
             description=str(exc),
+            result_source="",
             screenshot_path=screenshot_path,
             attempt=attempt,
             elapsed_seconds=elapsed,
@@ -1079,6 +1091,8 @@ def build_telegram_message(chat_results: list[CheckinResult]) -> str:
         lines.append(f"├ 🏷️ 类型：<code>{escape_html(result.sign_label)}</code>")
         lines.append(f"├ 🔁 尝试：<code>{result.attempt}</code>")
         lines.append(f"├ 📌 状态：<b>{escape_html(status_label(result.status))}</b>")
+        if result.result_source:
+            lines.append(f"├ 🔎 来源：<code>{escape_html(result_source_label(result.result_source) or result.result_source)}</code>")
         lines.append(f"⎣ 📝 结果：{escape_html(result_text(result) or status_label(result.status))}")
         lines.append("")
 
