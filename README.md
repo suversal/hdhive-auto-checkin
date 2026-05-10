@@ -52,12 +52,10 @@
 ]
 ```
 *优先级说明：账号内配置的 `sign_type` 和 `telegram_chat_id` 会覆盖全局配置。*
-<img width="1202" height="993" alt="image" src="https://github.com/user-attachments/assets/19dbe4fe-a41c-4541-b3d2-34180a1065be" />
 
 #### 🌐 添加 Repository Variables (普通变量，可见)
-- `HDHIVE_SIGN_TYPE` (可选): 全局默认签到类型，可选值为 `daily` 或 `gamble`（默认 `daily`）。
-- `TELEGRAM_CHAT_ID` (可选): 全局默认的 Telegram 接收人 Chat ID。
-<img width="1175" height="995" alt="image" src="https://github.com/user-attachments/assets/848396f4-8d0a-4fe3-989b-92a9186b058a" />
+- `HDHIVE_SIGN_TYPE` (可选，如在HDHIVE_ACCOUNTS_JSON配置则无需再配置): 全局默认签到类型，可选值为 `daily` 或 `gamble`（默认 `daily`）。
+- `TELEGRAM_CHAT_ID` (可选，如在HDHIVE_ACCOUNTS_JSON配置则无需再配置): 全局默认的 Telegram 接收人 Chat ID。
 
 ### 3. 启用并触发 Actions 工作流
 1. 进入 **Actions** 标签页，点击 `I understand my workflows, go ahead and enable them`。
