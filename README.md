@@ -163,3 +163,10 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 - GitHub Actions 下不要依赖 Playwright 自带 `Chromium`
 - 当前工作流使用 Playwright 的 `chrome` 渠道，并把失败时的浏览器诊断一并上传
 - 本地成功而 GitHub 失败时，优先对比 artifact 中的截图和诊断 JSON
+
+## Contact
+
+如果你在使用过程中遇到问题，欢迎联系我：
+
+- Telegram: [@suversal](https://t.me/suversal)
+- Email: `suyloveslife@gmail.com`

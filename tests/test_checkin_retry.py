@@ -5,6 +5,7 @@ from scripts.checkin import (
     AccountConfig,
     CheckinResult,
     choose_retry_delay,
+    confirm_checkin_from_points_records,
     extract_today_checkin_remark,
     run_account_with_retries,
     should_retry_result,
@@ -90,6 +91,27 @@ class CheckinRetryTest(unittest.TestCase):
         """
 
         self.assertIsNone(extract_today_checkin_remark(body_text, target_date="2026-05-10"))
+
+    def test_confirm_points_records_reopens_user_menu_before_navigation(self) -> None:
+        page = Mock()
+        body = Mock()
+        page.locator.return_value = body
+        body.inner_text.return_value = "积分记录\n签到成功，获得 16 积分\n2026-05-10 06:04"
+        points_title = Mock()
+        page.get_by_text.return_value.first = points_title
+
+        with (
+            patch("scripts.checkin.open_user_menu", return_value=True) as open_menu,
+            patch("scripts.checkin.click_first_visible", side_effect=[True, True]) as click_visible,
+            patch("scripts.checkin.extract_today_checkin_remark", return_value="签到成功，获得 16 积分"),
+        ):
+            remark = confirm_checkin_from_points_records(page, attempt=2)
+
+        self.assertEqual(remark, "签到成功，获得 16 积分")
+        open_menu.assert_called_once_with(page, quiet=True)
+        self.assertEqual(click_visible.call_count, 2)
+        page.wait_for_timeout.assert_any_call(2_000)
+        points_title.wait_for.assert_called_once()
 
 
 if __name__ == "__main__":

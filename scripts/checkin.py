@@ -509,6 +509,18 @@ def menu_sign_item(page: Page, sign_label: str):
     return page.get_by_text(sign_label, exact=False).first
 
 
+def open_user_menu(page: Page, *, timeout_ms: int = 5_000, quiet: bool = False) -> bool:
+    """Open the user menu and wait until menu content becomes visible."""
+    if not quiet:
+        log("打开用户菜单...")
+    try:
+        page.locator('button[aria-label="用户菜单"]').click(force=True, timeout=timeout_ms)
+        page.get_by_text("个人中心", exact=False).first.wait_for(timeout=timeout_ms)
+        return True
+    except Exception:
+        return False
+
+
 def click_first_visible(locator, *, timeout_ms: int = 2_000) -> bool:
     """Click the first visible match from a locator collection."""
     try:
@@ -550,12 +562,19 @@ def confirm_checkin_from_points_records(page: Page, attempt: int) -> Optional[st
     """When the Server Action result is unknown, confirm success via today's points records."""
     log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 未拿到明确响应，开始前往积分记录页核验...")
 
-    if not click_first_visible(page.get_by_text("个人中心", exact=False)):
+    log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 重新打开用户菜单，准备进入个人中心...")
+    if not open_user_menu(page, quiet=True):
+        log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 未能重新打开用户菜单，无法核验积分记录。")
+        return None
+
+    log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 进入个人中心...")
+    if not click_first_visible(page.get_by_text("个人中心", exact=False), timeout_ms=5_000):
         log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 未找到个人中心入口，无法核验积分记录。")
         return None
     page.wait_for_timeout(2_000)
 
-    if not click_first_visible(page.get_by_text("积分记录", exact=False)):
+    log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 打开积分记录页...")
+    if not click_first_visible(page.get_by_text("积分记录", exact=False), timeout_ms=5_000):
         log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 未找到积分记录入口，无法核验签到结果。")
         return None
     page.wait_for_timeout(2_000)
