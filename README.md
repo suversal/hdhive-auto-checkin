@@ -164,6 +164,14 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 - 当前工作流使用 Playwright 的 `chrome` 渠道，并把失败时的浏览器诊断一并上传
 - 本地成功而 GitHub 失败时，优先对比 artifact 中的截图和诊断 JSON
 
+## Example
+- 执行日志
+<img width="1502" height="570" alt="image" src="https://github.com/user-attachments/assets/7431fb09-363f-4ba6-a3f9-3236620ac6b8" />
+- TG通知
+<img width="289" height="371" alt="image" src="https://github.com/user-attachments/assets/7e5efcdf-a70b-4ba5-8491-006d617a6885" />
+
+
+
 ## Contact
 
 如果你在使用过程中遇到问题，欢迎联系我：
