@@ -509,6 +509,72 @@ def menu_sign_item(page: Page, sign_label: str):
     return page.get_by_text(sign_label, exact=False).first
 
 
+def click_first_visible(locator, *, timeout_ms: int = 2_000) -> bool:
+    """Click the first visible match from a locator collection."""
+    try:
+        count = locator.count()
+    except Exception:
+        return False
+
+    for index in range(count):
+        candidate = locator.nth(index)
+        try:
+            if candidate.is_visible():
+                candidate.click(force=True, timeout=timeout_ms)
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def extract_today_checkin_remark(body_text: str, target_date: Optional[str] = None) -> Optional[str]:
+    """Parse the points-record page text and return today's check-in remark when present."""
+    date_prefix = target_date or datetime.now().strftime("%Y-%m-%d")
+    lines = [compact(line) for line in body_text.splitlines() if compact(line)]
+
+    for index, line in enumerate(lines):
+        if not line.startswith(date_prefix):
+            continue
+        window = lines[max(0, index - 4): index + 1]
+        if "签到" not in window:
+            continue
+        for candidate in reversed(window[:-1]):
+            if "签到成功" in candidate:
+                return candidate
+        if "签到" in window:
+            return "签到成功"
+    return None
+
+
+def confirm_checkin_from_points_records(page: Page, attempt: int) -> Optional[str]:
+    """When the Server Action result is unknown, confirm success via today's points records."""
+    log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 未拿到明确响应，开始前往积分记录页核验...")
+
+    if not click_first_visible(page.get_by_text("个人中心", exact=False)):
+        log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 未找到个人中心入口，无法核验积分记录。")
+        return None
+    page.wait_for_timeout(2_000)
+
+    if not click_first_visible(page.get_by_text("积分记录", exact=False)):
+        log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 未找到积分记录入口，无法核验签到结果。")
+        return None
+    page.wait_for_timeout(2_000)
+
+    try:
+        page.get_by_text("积分记录", exact=False).first.wait_for(timeout=10_000)
+    except TimeoutError:
+        log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 积分记录页面加载超时。")
+        return None
+
+    body_text = page.locator("body").inner_text(timeout=5_000)
+    remark = extract_today_checkin_remark(body_text)
+    if remark:
+        log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 积分记录确认签到成功: {remark}")
+    else:
+        log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 积分记录未发现今天的签到记录。")
+    return remark
+
+
 def repair_mojibake_text(value: str) -> str:
     """
     修复常见的 UTF-8 / Latin-1 串码。
@@ -821,6 +887,21 @@ def perform_checkin(page: Page, account: AccountConfig, attempt: int = 1) -> Che
     
     screenshot_path = None
     if response_success is None:
+        confirmed_remark = confirm_checkin_from_points_records(page, attempt)
+        if confirmed_remark:
+            return CheckinResult(
+                username=account.username,
+                sign_type=account.sign_type,
+                sign_label=sign_label,
+                status="success",
+                response_success=True,
+                message="",
+                description=confirmed_remark,
+                response_status=response.status,
+                next_action=response.request.headers.get("next-action"),
+                raw_response=raw_response[:1_000],
+                attempt=attempt,
+            )
         screenshot_path = take_screenshot(page, account.username, f"attempt-{attempt}-unknown")
 
     return CheckinResult(

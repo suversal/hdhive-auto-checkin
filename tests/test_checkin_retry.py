@@ -5,6 +5,7 @@ from scripts.checkin import (
     AccountConfig,
     CheckinResult,
     choose_retry_delay,
+    extract_today_checkin_remark,
     run_account_with_retries,
     should_retry_result,
 )
@@ -49,6 +50,46 @@ class CheckinRetryTest(unittest.TestCase):
         self.assertIs(result, definitive_failure)
         self.assertEqual(run_once.call_count, 2)
         sleep.assert_not_called()
+
+    def test_extract_today_checkin_remark_skips_non_checkin_records(self) -> None:
+        body_text = """
+        积分记录
+        类型
+        积分
+        备注
+        创建时间
+        系统奖励
+        +100
+        不妨陪妈妈看一部她喜欢的电影或者电视剧
+        2026-05-10 12:13
+        签到
+        +16
+        签到成功，获得 16 积分
+        2026-05-10 06:04
+        签到
+        +15
+        签到成功，获得 15 积分
+        2026-05-09 06:14
+        """
+
+        remark = extract_today_checkin_remark(body_text, target_date="2026-05-10")
+
+        self.assertEqual(remark, "签到成功，获得 16 积分")
+
+    def test_extract_today_checkin_remark_returns_none_when_missing(self) -> None:
+        body_text = """
+        积分记录
+        系统奖励
+        +100
+        测试奖励
+        2026-05-10 12:13
+        签到
+        +15
+        签到成功，获得 15 积分
+        2026-05-09 06:14
+        """
+
+        self.assertIsNone(extract_today_checkin_remark(body_text, target_date="2026-05-10"))
 
 
 if __name__ == "__main__":
