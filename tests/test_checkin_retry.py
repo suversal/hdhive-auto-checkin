@@ -27,6 +27,12 @@ def make_result(response_success):
     )
 
 
+def make_result_with_attempt(response_success, attempt: int):
+    result = make_result(response_success)
+    result.attempt = attempt
+    return result
+
+
 class CheckinRetryTest(unittest.TestCase):
     def test_retries_only_unknown_results(self) -> None:
         self.assertTrue(should_retry_result(make_result(None)))
@@ -40,20 +46,82 @@ class CheckinRetryTest(unittest.TestCase):
 
     def test_run_account_with_retries_stops_after_definitive_result(self) -> None:
         account = AccountConfig(username="user@example.com", password="secret", sign_type="gamble")
-        unknown = make_result(None)
-        definitive_failure = make_result(False)
+        unknown = make_result_with_attempt(None, 1)
+        definitive_failure = make_result_with_attempt(False, 2)
+        browser = Mock()
+        context = Mock()
+        page = Mock()
 
         with (
             patch("scripts.checkin.MAX_CHECKIN_ATTEMPTS", 3),
             patch("scripts.checkin.RETRY_BASE_DELAY_SECONDS", 0),
             patch("scripts.checkin.time.sleep") as sleep,
-            patch("scripts.checkin.run_account_once", Mock(side_effect=[unknown, definitive_failure])) as run_once,
+            patch("scripts.checkin.create_logged_in_session", return_value=(context, page)),
+            patch("scripts.checkin.prepare_retry_page", return_value=True),
+            patch("scripts.checkin.execute_attempt", Mock(side_effect=[unknown, definitive_failure])) as execute_attempt,
+            patch("scripts.checkin.close_session"),
         ):
-            result = run_account_with_retries(Mock(), account)
+            result = run_account_with_retries(browser, account)
 
         self.assertIs(result, definitive_failure)
-        self.assertEqual(run_once.call_count, 2)
+        self.assertEqual(execute_attempt.call_count, 2)
         sleep.assert_not_called()
+
+    def test_run_account_with_retries_reuses_existing_session(self) -> None:
+        account = AccountConfig(username="user@example.com", password="secret", sign_type="gamble")
+        unknown = make_result_with_attempt(None, 1)
+        definitive_failure = make_result_with_attempt(False, 2)
+        browser = Mock()
+        context = Mock()
+        page = Mock()
+
+        with (
+            patch("scripts.checkin.MAX_CHECKIN_ATTEMPTS", 3),
+            patch("scripts.checkin.RETRY_BASE_DELAY_SECONDS", 0),
+            patch("scripts.checkin.time.sleep"),
+            patch("scripts.checkin.create_logged_in_session", return_value=(context, page)) as create_session,
+            patch("scripts.checkin.prepare_retry_page", return_value=True) as prepare_retry_page,
+            patch("scripts.checkin.execute_attempt", side_effect=[unknown, definitive_failure]) as execute_attempt,
+            patch("scripts.checkin.close_session") as close_session,
+        ):
+            result = run_account_with_retries(browser, account)
+
+        self.assertIs(result, definitive_failure)
+        create_session.assert_called_once_with(browser, account, 1)
+        prepare_retry_page.assert_called_once_with(page, 2)
+        self.assertEqual(execute_attempt.call_count, 2)
+        close_session.assert_called_once_with(context, 2)
+
+    def test_run_account_with_retries_recreates_session_when_refresh_fails(self) -> None:
+        account = AccountConfig(username="user@example.com", password="secret", sign_type="gamble")
+        unknown = make_result_with_attempt(None, 1)
+        definitive_failure = make_result_with_attempt(False, 2)
+        browser = Mock()
+        context1 = Mock()
+        page1 = Mock()
+        context2 = Mock()
+        page2 = Mock()
+
+        with (
+            patch("scripts.checkin.MAX_CHECKIN_ATTEMPTS", 3),
+            patch("scripts.checkin.RETRY_BASE_DELAY_SECONDS", 0),
+            patch("scripts.checkin.time.sleep"),
+            patch(
+                "scripts.checkin.create_logged_in_session",
+                side_effect=[(context1, page1), (context2, page2)],
+            ) as create_session,
+            patch("scripts.checkin.prepare_retry_page", return_value=False) as prepare_retry_page,
+            patch("scripts.checkin.execute_attempt", side_effect=[unknown, definitive_failure]) as execute_attempt,
+            patch("scripts.checkin.close_session") as close_session,
+        ):
+            result = run_account_with_retries(browser, account)
+
+        self.assertIs(result, definitive_failure)
+        self.assertEqual(create_session.call_count, 2)
+        prepare_retry_page.assert_called_once_with(page1, 2)
+        close_session.assert_any_call(context1, 2)
+        close_session.assert_any_call(context2, 2)
+        self.assertEqual(execute_attempt.call_count, 2)
 
     def test_extract_today_checkin_remark_skips_non_checkin_records(self) -> None:
         body_text = """
@@ -95,26 +163,103 @@ class CheckinRetryTest(unittest.TestCase):
 
         self.assertIsNone(extract_today_checkin_remark(body_text, target_date="2026-05-10"))
 
+    def test_extract_today_checkin_remark_handles_wrapped_mobile_rows(self) -> None:
+        body_text = """
+        积分记录
+        类型
+        积分
+        备注
+        创建时间
+        分享奖励
+        +4
+        用户解锁
+        了资源 维
+        多利亚一
+        号 (2010)
+        获得积分
+        4
+        2026-05-
+        14 10:15
+        签到
+        0
+        签到成
+        功，获得
+        0 积分
+        2026-05-
+        14 07:29
+        解锁资源
+        -4
+        解锁资源
+        爱情抓马
+        (2026) 扣
+        除积分 4
+        2026-05-
+        13 09:53
+        """
+
+        remark = extract_today_checkin_remark(body_text, target_date="2026-05-14")
+
+        self.assertEqual(remark, "签到成功，获得 0 积分")
+
     def test_confirm_points_records_reopens_user_menu_before_navigation(self) -> None:
         page = Mock()
         body = Mock()
         page.locator.return_value = body
-        body.inner_text.return_value = "积分记录\n签到成功，获得 16 积分\n2026-05-10 06:04"
-        points_title = Mock()
-        page.get_by_text.return_value.first = points_title
+        body.inner_text.return_value = (
+            "积分记录\n类型\n积分\n备注\n创建时间\n签到\n+16\n签到成功，获得 16 积分\n2026-05-10 06:04"
+        )
 
         with (
             patch("scripts.checkin.open_user_menu", return_value=True) as open_menu,
-            patch("scripts.checkin.click_first_visible", side_effect=[True, True]) as click_visible,
+            patch("scripts.checkin.click_menu_entry", side_effect=[True, True]) as click_menu_entry,
             patch("scripts.checkin.extract_today_checkin_remark", return_value="签到成功，获得 16 积分"),
         ):
             remark = confirm_checkin_from_points_records(page, attempt=2)
 
         self.assertEqual(remark, "签到成功，获得 16 积分")
         open_menu.assert_called_once_with(page, quiet=True)
-        self.assertEqual(click_visible.call_count, 2)
+        click_menu_entry.assert_any_call(page, "个人中心", timeout_ms=5_000)
+        click_menu_entry.assert_any_call(page, "积分记录", timeout_ms=5_000)
         page.wait_for_timeout.assert_any_call(2_000)
-        points_title.wait_for.assert_called_once()
+
+    def test_confirm_points_records_refreshes_before_navigation(self) -> None:
+        page = Mock()
+        body = Mock()
+        page.locator.return_value = body
+        body.inner_text.return_value = (
+            "积分记录\n类型\n积分\n备注\n创建时间\n签到\n+16\n签到成功，获得 16 积分\n2026-05-10 06:04"
+        )
+
+        with (
+            patch("scripts.checkin.dismiss_notice") as dismiss_notice,
+            patch("scripts.checkin.open_user_menu", return_value=True),
+            patch("scripts.checkin.click_menu_entry", side_effect=[True, True]),
+            patch("scripts.checkin.extract_today_checkin_remark", return_value="签到成功，获得 16 积分"),
+        ):
+            remark = confirm_checkin_from_points_records(page, attempt=2)
+
+        self.assertEqual(remark, "签到成功，获得 16 积分")
+        page.goto.assert_called_once()
+        dismiss_notice.assert_called_once_with(page)
+        self.assertGreaterEqual(page.wait_for_timeout.call_count, 3)
+
+    def test_confirm_points_records_clicks_points_record_again_when_body_is_still_personal_center(self) -> None:
+        page = Mock()
+        points_record_body = (
+            "积分记录\n类型\n积分\n备注\n创建时间\n签到\n+16\n签到成功，获得 16 积分\n2026-05-10 06:04"
+        )
+
+        with (
+            patch("scripts.checkin.open_user_menu", return_value=True),
+            patch("scripts.checkin.click_menu_entry", side_effect=[True, True, True]) as click_menu_entry,
+            patch("scripts.checkin.wait_for_points_record_body", side_effect=[None, points_record_body]),
+            patch("scripts.checkin.extract_today_checkin_remark", return_value="签到成功，获得 16 积分"),
+        ):
+            remark = confirm_checkin_from_points_records(page, attempt=2)
+
+        self.assertEqual(remark, "签到成功，获得 16 积分")
+        self.assertEqual(click_menu_entry.call_count, 3)
+        click_menu_entry.assert_any_call(page, "积分记录", timeout_ms=5_000)
 
     def test_telegram_message_distinguishes_result_source(self) -> None:
         from_response = CheckinResult(

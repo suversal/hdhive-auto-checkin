@@ -516,7 +516,7 @@ def open_user_menu(page: Page, *, timeout_ms: int = 5_000, quiet: bool = False) 
         log("打开用户菜单...")
     try:
         page.locator('button[aria-label="用户菜单"]').click(force=True, timeout=timeout_ms)
-        page.get_by_text("个人中心", exact=False).first.wait_for(timeout=timeout_ms)
+        page.get_by_text("个人中心", exact=True).first.wait_for(timeout=timeout_ms)
         return True
     except Exception:
         return False
@@ -540,9 +540,44 @@ def click_first_visible(locator, *, timeout_ms: int = 2_000) -> bool:
     return False
 
 
+def click_menu_entry(page: Page, label: str, *, timeout_ms: int = 5_000) -> bool:
+    """Click a visible menu entry using exact label matches before falling back to broad text matches."""
+    candidates = [
+        page.get_by_role("menuitem", name=label),
+        page.get_by_role("link", name=label),
+        page.get_by_role("button", name=label),
+        page.get_by_text(label, exact=True),
+        page.get_by_text(label, exact=False),
+    ]
+    for locator in candidates:
+        if click_first_visible(locator, timeout_ms=timeout_ms):
+            return True
+    return False
+
+
 def extract_today_checkin_remark(body_text: str, target_date: Optional[str] = None) -> Optional[str]:
     """Parse the points-record page text and return today's check-in remark when present."""
     date_prefix = target_date or datetime.now().strftime("%Y-%m-%d")
+    date_parts = date_prefix.split("-")
+    if len(date_parts) == 3:
+        dense_body = re.sub(r"\s+", "", body_text)
+        dense_match = re.search(
+            rf"(?:^|[^奖])签到[+-]?\d*(签到成功.*?积分){re.escape(date_prefix)}",
+            dense_body,
+        )
+        if dense_match:
+            remark = dense_match.group(1)
+            return compact(re.sub(r"获得([+-]?\d+)积分", r"获得 \1 积分", remark))
+
+        date_pattern = r"\s*-\s*".join(re.escape(part) for part in date_parts)
+        compact_body = compact(body_text)
+        match = re.search(
+            rf"(?:^|\s)签到\s+[+-]?\d+\s+(签到成功.*?积分)\s+{date_pattern}(?:\s|$)",
+            compact_body,
+        )
+        if match:
+            return compact(match.group(1))
+
     lines = [compact(line) for line in body_text.splitlines() if compact(line)]
 
     for index, line in enumerate(lines):
@@ -559,34 +594,84 @@ def extract_today_checkin_remark(body_text: str, target_date: Optional[str] = No
     return None
 
 
+def is_points_record_page(body_text: str) -> bool:
+    """Return True only when the main points-record table has loaded."""
+    text = compact(body_text)
+    return all(keyword in text for keyword in ("类型", "积分", "备注", "创建时间"))
+
+
+def wait_for_points_record_body(page: Page, attempt: int, *, timeout_ms: int = 12_000) -> Optional[str]:
+    """Wait until the points-record content area is loaded, then return body text."""
+    deadline = time.monotonic() + timeout_ms / 1000
+    last_body_text = ""
+
+    while time.monotonic() < deadline:
+        try:
+            body_text = page.locator("body").inner_text(timeout=2_000)
+            last_body_text = body_text
+            if is_points_record_page(body_text):
+                log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 已检测到积分记录表头，等待记录列表稳定...")
+                page.wait_for_timeout(2_000)
+                settled_body_text = page.locator("body").inner_text(timeout=3_000)
+                if is_points_record_page(settled_body_text):
+                    return settled_body_text
+                last_body_text = settled_body_text
+        except Exception:
+            pass
+        page.wait_for_timeout(1_000)
+
+    preview = compact(last_body_text)[:180] if last_body_text else "空页面或未能读取页面文本"
+    log(
+        f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] "
+        f"未检测到积分记录表头，当前页面预览: {preview}"
+    )
+    return None
+
+
 def confirm_checkin_from_points_records(page: Page, attempt: int) -> Optional[str]:
     """When the Server Action result is unknown, confirm success via today's points records."""
     log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 未拿到明确响应，开始前往积分记录页核验...")
+
+    log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 先刷新页面，等待站内提示和菜单状态稳定...")
+    try:
+        page.goto(BASE_URL, wait_until="domcontentloaded", timeout=30_000)
+        page.wait_for_timeout(2_000)
+        dismiss_notice(page)
+        page.wait_for_timeout(1_500)
+    except Exception as exc:
+        log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 刷新页面失败，无法核验积分记录: {type(exc).__name__}: {exc}")
+        return None
 
     log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 重新打开用户菜单，准备进入个人中心...")
     if not open_user_menu(page, quiet=True):
         log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 未能重新打开用户菜单，无法核验积分记录。")
         return None
 
+    page.wait_for_timeout(1_500)
     log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 进入个人中心...")
-    if not click_first_visible(page.get_by_text("个人中心", exact=False), timeout_ms=5_000):
+    if not click_menu_entry(page, "个人中心", timeout_ms=5_000):
         log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 未找到个人中心入口，无法核验积分记录。")
         return None
     page.wait_for_timeout(2_000)
 
-    log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 打开积分记录页...")
-    if not click_first_visible(page.get_by_text("积分记录", exact=False), timeout_ms=5_000):
-        log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 未找到积分记录入口，无法核验签到结果。")
-        return None
-    page.wait_for_timeout(2_000)
+    body_text = None
+    for open_attempt in range(1, 3):
+        log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 打开积分记录页...({open_attempt}/2)")
+        if not click_menu_entry(page, "积分记录", timeout_ms=5_000):
+            log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 未找到积分记录入口，无法核验签到结果。")
+            return None
+        page.wait_for_timeout(2_000)
 
-    try:
-        page.get_by_text("积分记录", exact=False).first.wait_for(timeout=10_000)
-    except TimeoutError:
-        log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 积分记录页面加载超时。")
+        body_text = wait_for_points_record_body(page, attempt)
+        if body_text:
+            break
+        if open_attempt < 2:
+            log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 积分记录内容未加载，准备再次点击积分记录菜单...")
+
+    if not body_text:
+        log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 积分记录页面未稳定加载，无法核验签到结果。")
         return None
 
-    body_text = page.locator("body").inner_text(timeout=5_000)
     remark = extract_today_checkin_remark(body_text)
     if remark:
         log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 积分记录确认签到成功: {remark}")
@@ -840,18 +925,87 @@ def choose_retry_delay(attempt: int, base_delay_seconds: float = RETRY_BASE_DELA
     return max(0.0, base_delay_seconds * attempt)
 
 
-def take_screenshot(page: Page, username: str, stage: str = "failure") -> Optional[str]:
+def take_screenshot(page: Page, username: str, stage: str = "failure", *, settle_ms: int = 3_000) -> Optional[str]:
     """截图当前页面，主要用于失败时的证据留存"""
     ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
     safe_name = safe_file_stem(username)
     path = ARTIFACTS_DIR / f"{safe_name}-{safe_file_stem(stage)}.png"
     try:
+        if settle_ms > 0:
+            log(f"截图前等待 {settle_ms / 1000:g}s，确认页面最终状态...")
+            page.wait_for_timeout(settle_ms)
         page.screenshot(path=str(path), full_page=True)
         log(f"截图已保存: {path}")
         return str(path)
     except Exception as e:
         log(f"截图失败: {e}")
         return None
+
+
+def create_logged_in_session(browser: Browser, account: AccountConfig, attempt: int) -> tuple[Any, Page]:
+    """Create a fresh browser context and log in once for an account."""
+    context = build_context(browser)
+    page = context.new_page()
+    log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 新建浏览器上下文，开始登录: {account.username}")
+    login(page, account)
+    return context, page
+
+
+def prepare_retry_page(page: Page, attempt: int) -> bool:
+    """Reuse the current authenticated page for another attempt when the session still looks healthy."""
+    log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 复用当前浏览器上下文，刷新页面后继续重试...")
+    try:
+        page.goto(BASE_URL, wait_until="domcontentloaded", timeout=30_000)
+        page.wait_for_timeout(3_000)
+        page.locator('button[aria-label="用户菜单"]').wait_for(timeout=10_000)
+        dismiss_notice(page)
+        log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 当前会话仍有效，无需重新登录。")
+        return True
+    except Exception as exc:
+        log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 当前会话复用失败，需要重新登录: {type(exc).__name__}: {exc}")
+        return False
+
+
+def close_session(context: Optional[Any], attempt: int) -> None:
+    """Close a browser context when it is no longer needed."""
+    if context is None:
+        return
+    try:
+        context.close()
+        log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 浏览器上下文已关闭")
+    except Exception as exc:
+        log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 关闭浏览器上下文失败: {exc}")
+
+
+def execute_attempt(page: Page, account: AccountConfig, attempt: int) -> CheckinResult:
+    """Execute one attempt within an existing authenticated page."""
+    start = time.monotonic()
+    try:
+        result = perform_checkin(page, account, attempt)
+    except Exception as exc:
+        elapsed = time.monotonic() - start
+        log(
+            f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 处理账号时发生异常: "
+            f"{type(exc).__name__}: {exc}，耗时 {elapsed:.1f}s，当前 URL={page.url}"
+        )
+        screenshot_path = take_screenshot(page, account.username, f"attempt-{attempt}-failure")
+        write_browser_diagnostics(page, account.username, f"attempt-{attempt}-failure")
+        result = CheckinResult(
+            username=account.username,
+            sign_type=account.sign_type,
+            sign_label=SIGN_TYPE_TO_LABEL[account.sign_type],
+            status="failed",
+            response_success=None,
+            message="执行失败",
+            description=str(exc),
+            result_source="",
+            screenshot_path=screenshot_path,
+            attempt=attempt,
+            elapsed_seconds=elapsed,
+        )
+    if result.elapsed_seconds is None:
+        result.elapsed_seconds = time.monotonic() - start
+    return result
 
 
 def perform_checkin(page: Page, account: AccountConfig, attempt: int = 1) -> CheckinResult:
@@ -985,73 +1139,51 @@ def format_result_line(result: CheckinResult) -> str:
 
 def run_account_once(browser: Browser, account: AccountConfig, attempt: int) -> CheckinResult:
     """Run one isolated browser-context attempt for an account."""
-    start = time.monotonic()
-    context = build_context(browser)
-    page = context.new_page()
+    context, page = create_logged_in_session(browser, account, attempt)
     try:
-        log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 新建浏览器上下文，开始登录: {account.username}")
-        login(page, account)
-        result = perform_checkin(page, account, attempt)
-    except Exception as exc:
-        elapsed = time.monotonic() - start
-        log(
-            f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 处理账号时发生异常: "
-            f"{type(exc).__name__}: {exc}，耗时 {elapsed:.1f}s，当前 URL={page.url}"
-        )
-        screenshot_path = take_screenshot(page, account.username, f"attempt-{attempt}-failure")
-        write_browser_diagnostics(page, account.username, f"attempt-{attempt}-failure")
-        result = CheckinResult(
-            username=account.username,
-            sign_type=account.sign_type,
-            sign_label=SIGN_TYPE_TO_LABEL[account.sign_type],
-            status="failed",
-            response_success=None,
-            message="执行失败",
-            description=str(exc),
-            result_source="",
-            screenshot_path=screenshot_path,
-            attempt=attempt,
-            elapsed_seconds=elapsed,
-        )
+        return execute_attempt(page, account, attempt)
     finally:
-        try:
-            context.close()
-            log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 浏览器上下文已关闭")
-        except Exception as exc:
-            log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 关闭浏览器上下文失败: {exc}")
-
-    if result.elapsed_seconds is None:
-        result.elapsed_seconds = time.monotonic() - start
-    return result
+        close_session(context, attempt)
 
 
 def run_account_with_retries(browser: Browser, account: AccountConfig) -> CheckinResult:
     """Retry transient/unknown automation failures while avoiding business-result retries."""
     last_result: Optional[CheckinResult] = None
-    for attempt in range(1, MAX_CHECKIN_ATTEMPTS + 1):
-        result = run_account_once(browser, account, attempt)
-        last_result = result
-        log(format_result_line(result))
+    context = None
+    page = None
+    try:
+        for attempt in range(1, MAX_CHECKIN_ATTEMPTS + 1):
+            if context is None or page is None:
+                context, page = create_logged_in_session(browser, account, attempt)
+            elif not prepare_retry_page(page, attempt):
+                close_session(context, attempt)
+                context, page = create_logged_in_session(browser, account, attempt)
 
-        if not should_retry_result(result):
-            log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 已获得明确业务结果，不再重试。")
-            return result
+            result = execute_attempt(page, account, attempt)
+            last_result = result
+            log(format_result_line(result))
 
-        if attempt >= MAX_CHECKIN_ATTEMPTS:
-            log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 已达到最大尝试次数，停止重试。")
-            return result
+            if not should_retry_result(result):
+                log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 已获得明确业务结果，不再重试。")
+                return result
 
-        delay = choose_retry_delay(attempt, RETRY_BASE_DELAY_SECONDS)
-        log(
-            f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 结果未知，将在 {delay:g}s 后重试；"
-            f"原因: {result_text(result) or status_label(result.status)}"
-        )
-        if delay:
-            time.sleep(delay)
+            if attempt >= MAX_CHECKIN_ATTEMPTS:
+                log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 已达到最大尝试次数，停止重试。")
+                return result
 
-    if last_result is None:
-        raise CheckinError("未执行任何签到尝试")
-    return last_result
+            delay = choose_retry_delay(attempt, RETRY_BASE_DELAY_SECONDS)
+            log(
+                f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 结果未知，将在 {delay:g}s 后重试；"
+                f"原因: {result_text(result) or status_label(result.status)}"
+            )
+            if delay:
+                time.sleep(delay)
+
+        if last_result is None:
+            raise CheckinError("未执行任何签到尝试")
+        return last_result
+    finally:
+        close_session(context, MAX_CHECKIN_ATTEMPTS if last_result is None else last_result.attempt)
 
 
 def send_telegram_message(chat_id: str, message: str) -> None:
