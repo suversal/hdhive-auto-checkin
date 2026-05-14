@@ -825,6 +825,11 @@ def should_confirm_via_points_records(response_success: Optional[bool], descript
     return response_success is False and "已经签到过" in normalized_description
 
 
+def is_already_signed_description(description: str) -> bool:
+    """Whether the parsed business description says the account has already checked in."""
+    return "已经签到过" in compact(description)
+
+
 def should_retry_result(result: CheckinResult) -> bool:
     """Only retry when we could not parse a definitive business result."""
     return result.response_success is None
@@ -939,6 +944,13 @@ def perform_checkin(page: Page, account: AccountConfig, attempt: int = 1) -> Che
                 raw_response=raw_response[:1_000],
                 attempt=attempt,
             )
+        if response_success is False and is_already_signed_description(description):
+            log(
+                f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] "
+                "接口返回已签到过，但积分记录核验未成功；降级为未知结果并继续保留重试资格。"
+            )
+            status = "unknown"
+            response_success = None
 
     if response_success is None:
         screenshot_path = take_screenshot(page, account.username, f"attempt-{attempt}-unknown")
