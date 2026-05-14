@@ -817,6 +817,14 @@ def result_source_label(result_source: str) -> str:
     }.get(result_source, "")
 
 
+def should_confirm_via_points_records(response_success: Optional[bool], description: str) -> bool:
+    """Decide whether the result should be reconciled against today's points records."""
+    if response_success is None:
+        return True
+    normalized_description = compact(description)
+    return response_success is False and "已经签到过" in normalized_description
+
+
 def should_retry_result(result: CheckinResult) -> bool:
     """Only retry when we could not parse a definitive business result."""
     return result.response_success is None
@@ -914,7 +922,7 @@ def perform_checkin(page: Page, account: AccountConfig, attempt: int = 1) -> Che
         status = "unknown"
     
     screenshot_path = None
-    if response_success is None:
+    if should_confirm_via_points_records(response_success, description):
         confirmed_remark = confirm_checkin_from_points_records(page, attempt)
         if confirmed_remark:
             return CheckinResult(
@@ -931,6 +939,8 @@ def perform_checkin(page: Page, account: AccountConfig, attempt: int = 1) -> Che
                 raw_response=raw_response[:1_000],
                 attempt=attempt,
             )
+
+    if response_success is None:
         screenshot_path = take_screenshot(page, account.username, f"attempt-{attempt}-unknown")
 
     return CheckinResult(

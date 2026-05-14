@@ -1,13 +1,15 @@
 import unittest
-from unittest.mock import Mock, patch
+from unittest.mock import MagicMock, Mock, patch
 
 from scripts.checkin import (
     AccountConfig,
     CheckinResult,
+    ResponseBodyReadResult,
     build_telegram_message,
     choose_retry_delay,
     confirm_checkin_from_points_records,
     extract_today_checkin_remark,
+    perform_checkin,
     run_account_with_retries,
     should_retry_result,
 )
@@ -140,6 +142,35 @@ class CheckinRetryTest(unittest.TestCase):
 
         self.assertIn("来源：<code>接口响应</code>", message)
         self.assertIn("来源：<code>积分记录核验</code>", message)
+
+    def test_perform_checkin_prefers_points_record_after_already_signed_response(self) -> None:
+        account = AccountConfig(username="user@example.com", password="secret", sign_type="gamble")
+        page = Mock()
+        response_context = MagicMock()
+        response_context.__enter__.return_value.value = Mock()
+        page.expect_response.return_value = response_context
+        response = Mock()
+        response.status = 200
+        response.request.headers = {"next-action": "token"}
+        body_result = ResponseBodyReadResult(
+            decoded_text='{"error":{"success":false,"message":"签到失败","description":"你已经签到过了，明天再来吧"}}',
+            raw_text_preview="preview",
+            raw_bytes_len=10,
+            read_status="ok",
+        )
+        item = Mock()
+
+        with (
+            patch("scripts.checkin.menu_sign_item", return_value=item),
+            patch("scripts.checkin.select_action_response", return_value=(response, body_result, False, "签到失败", "你已经签到过了，明天再来吧")),
+            patch("scripts.checkin.confirm_checkin_from_points_records", return_value="签到成功，获得 16 积分"),
+        ):
+            result = perform_checkin(page, account, attempt=2)
+
+        self.assertEqual(result.status, "success")
+        self.assertTrue(result.response_success)
+        self.assertEqual(result.description, "签到成功，获得 16 积分")
+        self.assertEqual(result.result_source, "points_record")
 
 
 if __name__ == "__main__":
