@@ -170,7 +170,7 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 <img width="1502" height="570" alt="image" src="https://github.com/user-attachments/assets/7431fb09-363f-4ba6-a3f9-3236620ac6b8" />
 
 - Telegram通知
-<img width="313" height="376" alt="image" src="https://github.com/user-attachments/assets/99e28a8c-cb29-45fc-8c7c-d1e538193df7" />
+<img width="284" height="542" alt="image" src="https://github.com/user-attachments/assets/21166a1f-dfba-4260-a82a-21fa75ff52be" />
 
 ## Contact
 
