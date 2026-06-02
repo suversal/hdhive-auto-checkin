@@ -3,7 +3,8 @@
   <p><b>基于 `Python + Telethon + GitHub Actions` 编写的 HDHive 自动化签到工具</b></p>
   <p><b>本方案不再访问 HDHive 网页，也不再通过 Playwright 点击签到按钮。脚本会使用你的 Telegram 用户会话，向已绑定 HDHive 账号的 Telegram 机器人发送 `赌狗签到`，再读取机器人回复生成结果通知。</b></p>
   <p><b>适用于 HDHive 网页端被 Cloudflare 验证拦截，但 Telegram 机器人仍可正常签到的场景。</b></p>
-  <h3>👉 当前推荐方案：Telegram 机器人签到版 👈</h3>
+  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/telethon">当前推荐方案：Telegram 机器人签到版</a> 👈</h3>
+  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/main">旧版方案地址：HDHive自动化签到工具 (Playwright方案，无法通过cf验证不再维护)</a> 👈</h3>
   <br/>
 </div>
 
