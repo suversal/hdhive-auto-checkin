@@ -4,6 +4,9 @@
 __pycache__/
 *.py[cod]
 
-local.config.json
+local.config*.json
+!local.config.example.json
 artifacts/
 scripts/artifacts/
+latest-results.json
+scripts/latest-results.json
