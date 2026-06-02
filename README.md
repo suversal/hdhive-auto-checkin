@@ -59,6 +59,7 @@ URL: https://github.com/suversal
 Platform: Desktop
 Description: Personal Telegram automation for HDHive checkin
 ```
+<img width="617" height="635" alt="image" src="https://github.com/user-attachments/assets/11cb07ec-3d66-4a62-9467-8a96b7bfa338" />
 
 5. 创建成功后，页面会显示：
 
@@ -68,6 +69,7 @@ api_hash
 ```
 
 这两个值后面会用到。不要公开 `api_hash`。
+<img width="745" height="579" alt="image" src="https://github.com/user-attachments/assets/80e10bf9-02ae-4179-a968-8e602928879a" />
 
 ## 生成 TELEGRAM_SESSION
 
@@ -113,15 +115,9 @@ TELEGRAM_SESSION:
 ```
 
 把这一整串保存下来。它就是该 Telegram 账号的 session。
-
 如果你有两个 Telegram 账号，就对第二个账号再运行一次这个脚本，生成第二个 session。
 
-生成完成后，建议把 `API_ID` 和 `API_HASH` 改回：
-
-```python
-API_ID = 0
-API_HASH = ""
-```
+<img width="835" height="433" alt="image" src="https://github.com/user-attachments/assets/736f610b-b4f5-490c-b587-2b4c7f8225f1" />
 
 ## 本地配置
 
@@ -272,6 +268,7 @@ python scripts/telegram_checkin.py
 [12:00:02] [account-1] 签到命令已发送，等待机器人回复...
 [12:00:03] [account-1] 机器人回复: 你已经签到过了，明天再来吧
 ```
+<img width="612" height="279" alt="image" src="https://github.com/user-attachments/assets/a25f0848-2918-4d14-aff7-0f01422a20d7" />
 
 结果会写到：
 
