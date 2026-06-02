@@ -293,7 +293,41 @@ TELEGRAM_API_HASH
 HDHIVE_TELEGRAM_ACCOUNTS_JSON
 ```
 
-`HDHIVE_TELEGRAM_ACCOUNTS_JSON` 填账号数组。注意这里不要包外层对象，只填数组本身：
+注意：不要把整个 `local.config.json` 作为一个 Secret 填进去。GitHub Actions 不会直接读取一个完整的本地配置文件。
+
+你需要把 `local.config.json` 拆成下面几项：
+
+| local.config.json 字段 | GitHub 中填写到哪里 |
+| --- | --- |
+| `telegram_api_id` | Secret: `TELEGRAM_API_ID` |
+| `telegram_api_hash` | Secret: `TELEGRAM_API_HASH` |
+| `hdhive_telegram_accounts_json` | Secret: `HDHIVE_TELEGRAM_ACCOUNTS_JSON` |
+| `telegram_response_timeout_seconds` | Variable: `TELEGRAM_RESPONSE_TIMEOUT_SECONDS` |
+| `telegram_summary_notify_chat_id` | Variable: `TELEGRAM_SUMMARY_NOTIFY_CHAT_ID` |
+
+`HDHIVE_TELEGRAM_ACCOUNTS_JSON` 只填账号数组。不要包含外层对象，也不要包含 `telegram_api_id`、`telegram_api_hash`、`telegram_response_timeout_seconds`、`telegram_summary_notify_chat_id`。
+
+如果你的本地配置是：
+
+```json
+{
+  "telegram_api_id": "123456",
+  "telegram_api_hash": "your-api-hash",
+  "telegram_response_timeout_seconds": "60",
+  "telegram_summary_notify_chat_id": "me",
+  "hdhive_telegram_accounts_json": [
+    {
+      "name": "account-1",
+      "session": "first-account-telethon-string-session",
+      "bot_username": "@HDHiveBot",
+      "command": "赌狗签到",
+      "notify_chat_id": "me"
+    }
+  ]
+}
+```
+
+那么 `HDHIVE_TELEGRAM_ACCOUNTS_JSON` 只填这一段：
 
 ```json
 [
