@@ -1,20 +1,24 @@
-# HDHive Telegram 自动签到
+<div align="center">
+  <h1>🧩 HDHive Telegram 自动签到 🧩</h1>
+  <p><b>基于 `Python + Telethon + GitHub Actions` 编写的 HDHive 自动化签到工具</b></p>
+  <p><b>本方案不再访问 HDHive 网页，也不再通过 Playwright 点击签到按钮。脚本会使用你的 Telegram 用户会话，向已绑定 HDHive 账号的 Telegram 机器人发送 `赌狗签到`，再读取机器人回复生成结果通知。</b></p>
+  <p><b>适用于 HDHive 网页端被 Cloudflare 验证拦截，但 Telegram 机器人仍可正常签到的场景。</b></p>
+  <h3>👉 当前推荐方案：Telegram 机器人签到版 👈</h3>
+  <br/>
+</div>
 
-这是一个使用 **GitHub Actions + Telethon** 的 HDHive 自动签到工具。
+---
 
-它不会打开 HDHive 网页，也不会使用 Playwright 操作浏览器。脚本会登录你的 Telegram 账号，向已经绑定 HDHive 账号的 Telegram 机器人发送签到命令，例如 `赌狗签到`，然后读取机器人回复并生成通知。
+## ✨ 核心特性
 
-这个方案适合 HDHive 网页端被 Cloudflare 验证拦住、但 Telegram 机器人仍然可以正常签到的情况。
+- 🔄 **多账号支持**：支持多个 Telegram 账号，每个账号使用自己的 `session`。
+- 🎲 **机器人签到**：向 HDHive Telegram 机器人发送 `赌狗签到`，不再依赖网页端签到按钮。
+- ☁️ **开箱即用的 CI**：内置 GitHub Actions 工作流，支持定时自动执行和手动触发。
+- 📢 **结果通知**：支持每个账号给自己发送单独通知，也支持主账号接收所有账号汇总通知。
+- 🧾 **结果留档**：会保存执行结果到 `artifacts/latest-results.json`，并写入 GitHub Actions Summary。
+- 🔐 **安全配置**：敏感信息通过 GitHub Secrets 管理，本地配置文件默认不会提交。
 
-## 功能
-
-- 支持 GitHub Actions 定时自动签到。
-- 支持多个 Telegram 账号，每个账号使用自己的 `session`。
-- 支持每个账号给自己发送单独结果通知。
-- 支持主账号接收所有账号的汇总通知。
-- 支持本地运行，方便先测试再部署到 GitHub。
-- 会保存执行结果到 `artifacts/latest-results.json`。
-- 会在 GitHub Actions Summary 中展示执行结果。
+---
 
 ## 工作流程
 
