@@ -1,0 +1,9 @@
+{
+  "telegram_api_id": "123456",
+  "telegram_api_hash": "your-api-hash",
+  "telegram_session": "your-telethon-string-session",
+  "hdhive_bot_username": "@your_hdhive_bot",
+  "hdhive_sign_command": "赌狗签到",
+  "telegram_response_timeout_seconds": "60",
+  "telegram_notify_chat_id": ""
+}
