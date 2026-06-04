@@ -5,7 +5,6 @@
   <p><b>⚠️ 重要提醒：由于 HDHive 官网已接入 Cloudflare 验证，在触发CF验证时，当前 Playwright 网页签到方案可能无法正常签到。</b></p>
   <p><b>如果你需要稳定自动签到，推荐切换到 <code>telethon</code> 分支，使用 Telegram 机器人签到方案。</b></p>
   <p><b>如果想同时启动两个方案，可以使用 action 分支统一调度</b></p>
-    <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/action">统一调度方案：先 main分支 后 telethon分支</a> 👈</h3>
     <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/telethon">当前推荐的稳定方案：telethon分支 （Telegram 机器人签到）</a> 👈</h3>
     <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/main">网页端签到方案地址：main分支 (Playwright方案，暂时不支持通过cf验证)</a> 👈</h3>
   <br/>
