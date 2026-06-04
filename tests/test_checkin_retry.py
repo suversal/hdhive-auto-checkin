@@ -8,7 +8,9 @@ from scripts.checkin import (
     build_telegram_message,
     choose_retry_delay,
     confirm_checkin_from_points_records,
+    dismiss_notice,
     extract_today_checkin_remark,
+    login,
     perform_checkin,
     run_account_with_retries,
     should_retry_result,
@@ -43,6 +45,32 @@ class CheckinRetryTest(unittest.TestCase):
         self.assertEqual(choose_retry_delay(1, base_delay_seconds=3), 3)
         self.assertEqual(choose_retry_delay(2, base_delay_seconds=3), 6)
         self.assertEqual(choose_retry_delay(3, base_delay_seconds=3), 9)
+
+    def test_dismiss_notice_waits_for_delayed_notice_button(self) -> None:
+        page = Mock()
+        button = Mock()
+        page.get_by_role.return_value = button
+        button.count.side_effect = [0, 1]
+        button.first.is_enabled.return_value = True
+
+        with patch("scripts.checkin.time.time", side_effect=[100.0, 100.0, 101.0]):
+            dismissed = dismiss_notice(page)
+
+        self.assertTrue(dismissed)
+        page.wait_for_timeout.assert_any_call(500)
+        button.first.click.assert_called_once_with(force=True, timeout=2_000)
+
+    def test_login_waits_for_delayed_home_notice_after_user_menu_appears(self) -> None:
+        account = AccountConfig(username="user@example.com", password="secret", sign_type="gamble")
+        page = Mock()
+
+        with (
+            patch("scripts.checkin.wait_for_login_form"),
+            patch("scripts.checkin.dismiss_notice") as dismiss_notice_mock,
+        ):
+            login(page, account)
+
+        dismiss_notice_mock.assert_called_once_with(page, timeout_ms=12_000)
 
     def test_run_account_with_retries_stops_after_definitive_result(self) -> None:
         account = AccountConfig(username="user@example.com", password="secret", sign_type="gamble")

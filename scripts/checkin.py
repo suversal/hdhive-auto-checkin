@@ -458,24 +458,26 @@ def write_browser_diagnostics(page: Page, username: str, stage: str) -> Optional
         return None
 
 
-def dismiss_notice(page: Page) -> None:
+def dismiss_notice(page: Page, *, timeout_ms: int = 2_000) -> bool:
     """尝试关闭首页的公告/通知弹窗"""
     button = page.get_by_role("button", name=re.compile(r"我知道了"))
-    if button.count() == 0:
-        return
-    
-    log("发现公告弹窗，正在尝试关闭...")
-    deadline = time.time() + 12
+    deadline = time.time() + timeout_ms / 1000
+    logged = False
     while time.time() < deadline:
         try:
-            if button.first.is_enabled():
-                button.first.click(force=True, timeout=2_000)
-                log("成功关闭公告")
-                page.wait_for_timeout(800)
-                return
+            if button.count() > 0:
+                if not logged:
+                    log("发现公告弹窗，正在尝试关闭...")
+                    logged = True
+                if button.first.is_enabled():
+                    button.first.click(force=True, timeout=2_000)
+                    log("成功关闭公告")
+                    page.wait_for_timeout(800)
+                    return True
         except Exception:
             pass
         page.wait_for_timeout(500)
+    return False
 
 
 def login(page: Page, account: AccountConfig) -> None:
@@ -499,7 +501,7 @@ def login(page: Page, account: AccountConfig) -> None:
         raise CheckinError(f"登录超时或失败，未进入主界面。") from exc
     
     page.wait_for_timeout(2_000)
-    dismiss_notice(page)
+    dismiss_notice(page, timeout_ms=12_000)
 
 
 def menu_sign_item(page: Page, sign_label: str):
@@ -958,7 +960,7 @@ def prepare_retry_page(page: Page, attempt: int) -> bool:
         page.goto(BASE_URL, wait_until="domcontentloaded", timeout=30_000)
         page.wait_for_timeout(3_000)
         page.locator('button[aria-label="用户菜单"]').wait_for(timeout=10_000)
-        dismiss_notice(page)
+        dismiss_notice(page, timeout_ms=12_000)
         log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 当前会话仍有效，无需重新登录。")
         return True
     except Exception as exc:
