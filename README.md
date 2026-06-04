@@ -1,11 +1,10 @@
 <div align="center">
   <h1>🧩 HDHive Telegram 自动签到 🧩</h1>
-  <p><b>基于 <code>Python + Telethon + GitHub Actions</code> 编写的 HDHive Telegram 自动签到工具</b></p>
-  <p><b>当前定位：不访问 HDHive 网页，也不通过 Playwright 点击签到按钮；脚本使用 Telegram 用户会话向已绑定 HDHive 账号的机器人发送 <code>赌狗签到</code>。</b></p>
-  <p><b>适用场景：网页端被 Cloudflare/站内验证拦截，但 Telegram 机器人仍可正常签到。</b></p>
-  <p><b>如果网页端当天未触发验证，<code>main</code> 分支仍可继续使用；如果想先跑网页端再跑 Telegram 兜底，可以使用 <code>action</code> 分支统一调度。</b></p>
-  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/action">统一调度方案：先 main 后 telethon</a> 👈</h3>
-  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/main">网页端签到分支：main</a> 👈</h3>
+  <p><b>基于 `Python + Telethon + GitHub Actions` 编写的 HDHive 自动化签到工具</b></p>
+  <p><b>本方案不再通过Playwright自动访问HDHive网页并点击签到按钮。本方案会使用你的 Telegram 用户会话，向已绑定 HDHive 账号的 Telegram 机器人发送 `赌狗签到`，再读取机器人回复生成结果通知。模拟在Telegram中签到场景。</b></p>
+  <p><b>适用于 HDHive 网页端自动签到被 Cloudflare 验证拦截，但 Telegram 机器人仍可正常签到的场景。</b></p>
+  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/telethon">当前推荐的稳定方案：telethon分支 （Telegram 机器人签到）</a> 👈</h3>
+  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/main">网页端签到方案地址：main分支 (Playwright方案，暂时不支持通过cf验证)</a> 👈</h3>
   <br/>
 </div>
 
