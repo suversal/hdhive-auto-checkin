@@ -112,7 +112,7 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 - `HDHIVE_SIGN_TYPE`：默认签到类型
 - `HDHIVE_HEADLESS`：默认 `true`
 - `HDHIVE_TIMEZONE`：默认 `Asia/Shanghai`
-- `HDHIVE_MAX_ATTEMPTS`：每个账号最大尝试次数，默认 `5`
+- `HDHIVE_MAX_ATTEMPTS`：每个账号最大尝试次数，默认 `3`
 - `HDHIVE_RETRY_BASE_DELAY_SECONDS`：重试基础等待秒数，默认 `5`，按尝试次数线性递增
 - `HDHIVE_RESPONSE_BODY_TIMEOUT_SECONDS`：读取签到接口响应 body 的最长等待秒数，默认 `15`
 - `TELEGRAM_BOT_TOKEN`：Telegram Bot Token

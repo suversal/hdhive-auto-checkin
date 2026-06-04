@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, Mock, patch
 from scripts.checkin import (
     AccountConfig,
     CheckinResult,
+    MAX_CHECKIN_ATTEMPTS,
     ResponseBodyReadResult,
     build_telegram_message,
     choose_retry_delay,
@@ -11,6 +12,7 @@ from scripts.checkin import (
     dismiss_notice,
     extract_today_checkin_remark,
     login,
+    menu_sign_item,
     perform_checkin,
     run_account_with_retries,
     should_retry_result,
@@ -46,6 +48,35 @@ class CheckinRetryTest(unittest.TestCase):
         self.assertEqual(choose_retry_delay(2, base_delay_seconds=3), 6)
         self.assertEqual(choose_retry_delay(3, base_delay_seconds=3), 9)
 
+    def test_default_max_attempts_is_three(self) -> None:
+        self.assertEqual(MAX_CHECKIN_ATTEMPTS, 3)
+
+    def test_menu_sign_item_uses_gamble_icon_selector_when_text_is_obfuscated(self) -> None:
+        page = Mock()
+        user_menu_button = Mock()
+        icon_locator = Mock()
+        icon_first = Mock()
+        icon_locator.first = icon_first
+        gamble_selector = (
+            'button:has(svg[viewBox="0 0 256 256"] '
+            'path[d^="M216 64v128"])'
+        )
+
+        def locator(selector: str, *args, **kwargs):
+            if selector == 'button[aria-label="用户菜单"]':
+                return user_menu_button
+            if selector == gamble_selector:
+                return icon_locator
+            raise AssertionError(f"unexpected selector: {selector}")
+
+        page.locator.side_effect = locator
+
+        item = menu_sign_item(page, "赌狗签到", sign_type="gamble")
+
+        self.assertIs(item, icon_first)
+        user_menu_button.click.assert_called_once_with(force=True)
+        page.get_by_text.assert_not_called()
+
     def test_dismiss_notice_waits_for_delayed_notice_button(self) -> None:
         page = Mock()
         button = Mock()
@@ -53,11 +84,24 @@ class CheckinRetryTest(unittest.TestCase):
         button.count.side_effect = [0, 1]
         button.first.is_enabled.return_value = True
 
-        with patch("scripts.checkin.time.time", side_effect=[100.0, 100.0, 101.0]):
+        with patch("scripts.checkin.time.time", side_effect=[100.0, 100.0, 101.0, 101.0]):
             dismissed = dismiss_notice(page)
 
         self.assertTrue(dismissed)
         page.wait_for_timeout.assert_any_call(500)
+        button.first.click.assert_called_once_with(force=True, timeout=2_000)
+
+    def test_dismiss_notice_extends_wait_after_late_notice_appears(self) -> None:
+        page = Mock()
+        button = Mock()
+        page.get_by_role.return_value = button
+        button.count.return_value = 1
+        button.first.is_enabled.side_effect = [False, True]
+
+        with patch("scripts.checkin.time.time", side_effect=[100.0, 124.0, 124.0, 130.0]):
+            dismissed = dismiss_notice(page, timeout_ms=25_000)
+
+        self.assertTrue(dismissed)
         button.first.click.assert_called_once_with(force=True, timeout=2_000)
 
     def test_login_waits_for_delayed_home_notice_after_user_menu_appears(self) -> None:
@@ -70,7 +114,7 @@ class CheckinRetryTest(unittest.TestCase):
         ):
             login(page, account)
 
-        dismiss_notice_mock.assert_called_once_with(page, timeout_ms=12_000)
+        dismiss_notice_mock.assert_called_once_with(page, timeout_ms=25_000)
 
     def test_run_account_with_retries_stops_after_definitive_result(self) -> None:
         account = AccountConfig(username="user@example.com", password="secret", sign_type="gamble")
@@ -281,6 +325,24 @@ class CheckinRetryTest(unittest.TestCase):
             patch("scripts.checkin.open_user_menu", return_value=True),
             patch("scripts.checkin.click_menu_entry", side_effect=[True, True, True]) as click_menu_entry,
             patch("scripts.checkin.wait_for_points_record_body", side_effect=[None, points_record_body]),
+            patch("scripts.checkin.extract_today_checkin_remark", return_value="签到成功，获得 16 积分"),
+        ):
+            remark = confirm_checkin_from_points_records(page, attempt=2)
+
+        self.assertEqual(remark, "签到成功，获得 16 积分")
+        self.assertEqual(click_menu_entry.call_count, 3)
+        click_menu_entry.assert_any_call(page, "积分记录", timeout_ms=5_000)
+
+    def test_confirm_points_records_retries_when_points_record_entry_is_delayed(self) -> None:
+        page = Mock()
+        points_record_body = (
+            "积分记录\n类型\n积分\n备注\n创建时间\n签到\n+16\n签到成功，获得 16 积分\n2026-05-10 06:04"
+        )
+
+        with (
+            patch("scripts.checkin.open_user_menu", return_value=True),
+            patch("scripts.checkin.click_menu_entry", side_effect=[True, False, True]) as click_menu_entry,
+            patch("scripts.checkin.wait_for_points_record_body", return_value=points_record_body),
             patch("scripts.checkin.extract_today_checkin_remark", return_value="签到成功，获得 16 积分"),
         ):
             remark = confirm_checkin_from_points_records(page, attempt=2)

@@ -95,7 +95,7 @@ TELEGRAM_CHAT_ID = get_config_value("TELEGRAM_CHAT_ID", "", "telegram_chat_id")
 RESPONSE_BODY_TIMEOUT_SECONDS = float(
     get_config_value("HDHIVE_RESPONSE_BODY_TIMEOUT_SECONDS", "15", "response_body_timeout_seconds")
 )
-MAX_CHECKIN_ATTEMPTS = max(1, int(get_config_value("HDHIVE_MAX_ATTEMPTS", "5", "max_attempts")))
+MAX_CHECKIN_ATTEMPTS = max(1, int(get_config_value("HDHIVE_MAX_ATTEMPTS", "3", "max_attempts")))
 RETRY_BASE_DELAY_SECONDS = float(
     get_config_value("HDHIVE_RETRY_BASE_DELAY_SECONDS", "5", "retry_base_delay_seconds")
 )
@@ -103,6 +103,10 @@ RETRY_BASE_DELAY_SECONDS = float(
 SIGN_TYPE_TO_LABEL = {
     "daily": "每日签到",
     "gamble": "赌狗签到",
+}
+SIGN_TYPE_TO_MENU_ICON_SELECTOR = {
+    "daily": 'button:has(svg[viewBox="0 0 24 24"] path[d^="M6.96 2"])',
+    "gamble": 'button:has(svg[viewBox="0 0 256 256"] path[d^="M216 64v128"])',
 }
 
 # --- 浏览器指纹伪装脚本 ---
@@ -469,6 +473,7 @@ def dismiss_notice(page: Page, *, timeout_ms: int = 2_000) -> bool:
                 if not logged:
                     log("发现公告弹窗，正在尝试关闭...")
                     logged = True
+                    deadline = max(deadline, time.time() + 15)
                 if button.first.is_enabled():
                     button.first.click(force=True, timeout=2_000)
                     log("成功关闭公告")
@@ -501,14 +506,17 @@ def login(page: Page, account: AccountConfig) -> None:
         raise CheckinError(f"登录超时或失败，未进入主界面。") from exc
     
     page.wait_for_timeout(2_000)
-    dismiss_notice(page, timeout_ms=12_000)
+    dismiss_notice(page, timeout_ms=25_000)
 
 
-def menu_sign_item(page: Page, sign_label: str):
+def menu_sign_item(page: Page, sign_label: str, sign_type: Optional[str] = None):
     """在用户菜单中寻找对应的签到项"""
     log("打开用户菜单...")
     page.locator('button[aria-label="用户菜单"]').click(force=True)
     page.wait_for_timeout(1_500)
+    icon_selector = SIGN_TYPE_TO_MENU_ICON_SELECTOR.get(sign_type or "")
+    if icon_selector:
+        return page.locator(icon_selector).first
     return page.get_by_text(sign_label, exact=False).first
 
 
@@ -661,6 +669,9 @@ def confirm_checkin_from_points_records(page: Page, attempt: int) -> Optional[st
         log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 打开积分记录页...({open_attempt}/2)")
         if not click_menu_entry(page, "积分记录", timeout_ms=5_000):
             log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 未找到积分记录入口，无法核验签到结果。")
+            if open_attempt < 2:
+                page.wait_for_timeout(2_000)
+                continue
             return None
         page.wait_for_timeout(2_000)
 
@@ -960,7 +971,7 @@ def prepare_retry_page(page: Page, attempt: int) -> bool:
         page.goto(BASE_URL, wait_until="domcontentloaded", timeout=30_000)
         page.wait_for_timeout(3_000)
         page.locator('button[aria-label="用户菜单"]').wait_for(timeout=10_000)
-        dismiss_notice(page, timeout_ms=12_000)
+        dismiss_notice(page, timeout_ms=25_000)
         log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 当前会话仍有效，无需重新登录。")
         return True
     except Exception as exc:
@@ -1013,7 +1024,7 @@ def execute_attempt(page: Page, account: AccountConfig, attempt: int) -> Checkin
 def perform_checkin(page: Page, account: AccountConfig, attempt: int = 1) -> CheckinResult:
     """执行点击签到并捕获网络响应"""
     sign_label = SIGN_TYPE_TO_LABEL[account.sign_type]
-    item = menu_sign_item(page, sign_label)
+    item = menu_sign_item(page, sign_label, sign_type=account.sign_type)
     
     try:
         item.wait_for(timeout=20_000)
