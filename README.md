@@ -1,10 +1,12 @@
 <div align="center">
   <h1>🚨 HDHive 自动签到 🚨</h1>
   <p><b>基于 `Python + Playwright` 编写的 HDHive 自动化签到工具</b></p>
-  <p><b>⚠️ 重要提醒：由于 HDHive 官网已接入 Cloudflare 验证，当前 Playwright 网页签到方案已无法稳定使用。</b></p>
-  <p><b>如果你需要继续自动签到，推荐切换到 <code>telethon</code> 分支，使用 Telegram 机器人签到方案。</b></p>
+  <p><b>⚠️ 重要提醒：HDHive 官网已接入 Cloudflare/站内验证，网页端签到稳定性会受当天环境影响。</b></p>
+  <p><b>当前 Playwright 网页签到方案并非完全不可用；在未触发验证时仍可正常完成签到和积分记录核验。</b></p>
+  <p><b>如果需要更稳的备用路线，可以使用 <code>telethon</code> 分支；如果想同时观察两条路线，可以使用 <code>action</code> 分支统一调度。</b></p>
   <p><b>由于 HDHive 站点使用了 Next.js Server Actions，其请求头中包含了动态的 `Next_Action` 校验参数，使用传统的纯 HTTP 请求（如 requests/curl）进行模拟非常繁琐且易失效，需要频繁抓包修改配置。故新版本通过 Playwright 驱动真实浏览器进行自动化操作，完美绕过动态参数校验，实现更加稳定的自动化签到。</b></p>
-  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/telethon">当前推荐方案：Telegram 机器人签到版</a> 👈</h3>
+  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/action">统一调度方案：先 main 后 telethon</a> 👈</h3>
+  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/telethon">备用方案：Telegram 机器人签到版</a> 👈</h3>
   <h3>👉 <a href="https://github.com/suversal/auto-check">旧版方案地址：HDHive自动化签到工具 (传统HTTP请求版 需手动维护ActionId)</a> 👈</h3>
   <br/>
 </div>
