@@ -6,6 +6,11 @@
   "max_attempts": "5",
   "retry_base_delay_seconds": "5",
   "response_body_timeout_seconds": "15",
+  "yescaptcha_client_key": "your-yescaptcha-client-key",
+  "yescaptcha_api_base_url": "https://api.yescaptcha.com",
+  "yescaptcha_task_type": "TurnstileTaskProxyless",
+  "yescaptcha_result_timeout_seconds": "120",
+  "yescaptcha_poll_interval_seconds": "3",
   "telegram_bot_token": "your-telegram-bot-token",
   "telegram_chat_id": "your-default-chat-id",
   "accounts": [

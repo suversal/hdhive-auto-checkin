@@ -1,5 +1,6 @@
+import json
 import unittest
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import Mock, patch
 
 from scripts.checkin import (
     AccountConfig,
@@ -8,10 +9,14 @@ from scripts.checkin import (
     build_telegram_message,
     choose_retry_delay,
     confirm_checkin_from_points_records,
+    create_yescaptcha_turnstile_task,
     extract_today_checkin_remark,
     perform_checkin,
+    request_yescaptcha_turnstile_token,
     run_account_with_retries,
     should_retry_result,
+    wait_for_checkin_action_response,
+    click_menu_entry,
 )
 
 
@@ -34,6 +39,100 @@ def make_result_with_attempt(response_success, attempt: int):
 
 
 class CheckinRetryTest(unittest.TestCase):
+    def test_create_yescaptcha_turnstile_task_posts_documented_payload(self) -> None:
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b'{"errorId":0,"taskId":"task-123"}'
+
+        captured = {}
+
+        def fake_urlopen(request, timeout):
+            captured["request"] = request
+            captured["timeout"] = timeout
+            return FakeResponse()
+
+        with patch("scripts.checkin.urlopen", side_effect=fake_urlopen):
+            task_id = create_yescaptcha_turnstile_task(
+                client_key="client-key",
+                website_url="https://hdhive.com",
+                website_key="0x4AAAA",
+            )
+
+        self.assertEqual(task_id, "task-123")
+        request = captured["request"]
+        self.assertEqual(request.full_url, "https://api.yescaptcha.com/createTask")
+        self.assertEqual(request.get_method(), "POST")
+        payload = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(payload["clientKey"], "client-key")
+        self.assertEqual(
+            payload["task"],
+            {
+                "type": "TurnstileTaskProxyless",
+                "websiteURL": "https://hdhive.com",
+                "websiteKey": "0x4AAAA",
+            },
+        )
+
+    def test_request_yescaptcha_turnstile_token_polls_until_ready(self) -> None:
+        responses = [
+            b'{"errorId":0,"taskId":"task-123"}',
+            b'{"errorId":0,"status":"processing"}',
+            b'{"errorId":0,"status":"ready","solution":{"token":"cf-token"}}',
+        ]
+
+        class FakeResponse:
+            status = 200
+
+            def __init__(self, body):
+                self.body = body
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return self.body
+
+        with (
+            patch("scripts.checkin.urlopen", side_effect=[FakeResponse(body) for body in responses]),
+            patch("scripts.checkin.time.sleep") as sleep,
+        ):
+            token = request_yescaptcha_turnstile_token(
+                client_key="client-key",
+                website_url="https://hdhive.com",
+                website_key="0x4AAAA",
+            )
+
+        self.assertEqual(token, "cf-token")
+        sleep.assert_called_once()
+
+    def test_wait_for_checkin_action_response_solves_turnstile_before_response(self) -> None:
+        page = Mock()
+        response = Mock()
+        action_responses = []
+
+        def wait_for_timeout(_timeout_ms):
+            if not action_responses:
+                action_responses.append(response)
+
+        page.wait_for_timeout.side_effect = wait_for_timeout
+
+        with patch("scripts.checkin.solve_turnstile_challenge_if_present", return_value=True) as solve:
+            result = wait_for_checkin_action_response(page, action_responses, attempt=1, timeout_ms=5_000)
+
+        self.assertIs(result, response)
+        solve.assert_called_once_with(page, 1)
+
     def test_retries_only_unknown_results(self) -> None:
         self.assertTrue(should_retry_result(make_result(None)))
         self.assertFalse(should_retry_result(make_result(False)))
@@ -261,6 +360,17 @@ class CheckinRetryTest(unittest.TestCase):
         self.assertEqual(click_menu_entry.call_count, 3)
         click_menu_entry.assert_any_call(page, "积分记录", timeout_ms=5_000)
 
+    def test_click_menu_entry_falls_back_to_dom_text_click(self) -> None:
+        page = Mock()
+        hidden_locator = Mock()
+        hidden_locator.count.return_value = 0
+        page.get_by_role.return_value = hidden_locator
+        page.get_by_text.return_value = hidden_locator
+        page.evaluate.return_value = True
+
+        self.assertTrue(click_menu_entry(page, "积分记录"))
+        page.evaluate.assert_called_once()
+
     def test_telegram_message_distinguishes_result_source(self) -> None:
         from_response = CheckinResult(
             username="a@example.com",
@@ -291,9 +401,6 @@ class CheckinRetryTest(unittest.TestCase):
     def test_perform_checkin_prefers_points_record_after_already_signed_response(self) -> None:
         account = AccountConfig(username="user@example.com", password="secret", sign_type="gamble")
         page = Mock()
-        response_context = MagicMock()
-        response_context.__enter__.return_value.value = Mock()
-        page.expect_response.return_value = response_context
         response = Mock()
         response.status = 200
         response.request.headers = {"next-action": "token"}
@@ -307,6 +414,7 @@ class CheckinRetryTest(unittest.TestCase):
 
         with (
             patch("scripts.checkin.menu_sign_item", return_value=item),
+            patch("scripts.checkin.wait_for_checkin_action_response", return_value=response),
             patch("scripts.checkin.select_action_response", return_value=(response, body_result, False, "签到失败", "你已经签到过了，明天再来吧")),
             patch("scripts.checkin.confirm_checkin_from_points_records", return_value="签到成功，获得 16 积分"),
         ):
@@ -320,9 +428,6 @@ class CheckinRetryTest(unittest.TestCase):
     def test_perform_checkin_retries_when_already_signed_cannot_be_confirmed(self) -> None:
         account = AccountConfig(username="user@example.com", password="secret", sign_type="gamble")
         page = Mock()
-        response_context = MagicMock()
-        response_context.__enter__.return_value.value = Mock()
-        page.expect_response.return_value = response_context
         response = Mock()
         response.status = 200
         response.request.headers = {"next-action": "token"}
@@ -336,6 +441,7 @@ class CheckinRetryTest(unittest.TestCase):
 
         with (
             patch("scripts.checkin.menu_sign_item", return_value=item),
+            patch("scripts.checkin.wait_for_checkin_action_response", return_value=response),
             patch("scripts.checkin.select_action_response", return_value=(response, body_result, False, "签到失败", "你已经签到过了，明天再来吧")),
             patch("scripts.checkin.confirm_checkin_from_points_records", return_value=None),
         ):

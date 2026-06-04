@@ -99,6 +99,22 @@ MAX_CHECKIN_ATTEMPTS = max(1, int(get_config_value("HDHIVE_MAX_ATTEMPTS", "5", "
 RETRY_BASE_DELAY_SECONDS = float(
     get_config_value("HDHIVE_RETRY_BASE_DELAY_SECONDS", "5", "retry_base_delay_seconds")
 )
+YESCAPTCHA_CLIENT_KEY = get_config_value("YESCAPTCHA_CLIENT_KEY", "", "yescaptcha_client_key")
+YESCAPTCHA_API_BASE_URL = get_config_value(
+    "YESCAPTCHA_API_BASE_URL", "https://api.yescaptcha.com", "yescaptcha_api_base_url"
+).rstrip("/")
+YESCAPTCHA_TASK_TYPE = get_config_value(
+    "YESCAPTCHA_TASK_TYPE", "TurnstileTaskProxyless", "yescaptcha_task_type"
+) or "TurnstileTaskProxyless"
+YESCAPTCHA_HTTP_TIMEOUT_SECONDS = float(
+    get_config_value("YESCAPTCHA_HTTP_TIMEOUT_SECONDS", "30", "yescaptcha_http_timeout_seconds")
+)
+YESCAPTCHA_RESULT_TIMEOUT_SECONDS = float(
+    get_config_value("YESCAPTCHA_RESULT_TIMEOUT_SECONDS", "120", "yescaptcha_result_timeout_seconds")
+)
+YESCAPTCHA_POLL_INTERVAL_SECONDS = float(
+    get_config_value("YESCAPTCHA_POLL_INTERVAL_SECONDS", "3", "yescaptcha_poll_interval_seconds")
+)
 
 SIGN_TYPE_TO_LABEL = {
     "daily": "每日签到",
@@ -214,6 +230,133 @@ patchWebGL(window.WebGLRenderingContext && window.WebGLRenderingContext.prototyp
 patchWebGL(window.WebGL2RenderingContext && window.WebGL2RenderingContext.prototype);
 """
 
+TURNSTILE_INIT_SCRIPT = """
+(() => {
+  if (window.__hdhiveTurnstileHookInstalled) return;
+  window.__hdhiveTurnstileHookInstalled = true;
+  window.__hdhiveTurnstileCaptures = window.__hdhiveTurnstileCaptures || [];
+
+  const submitToken = (token) => {
+    let touched = 0;
+    const fields = document.querySelectorAll(
+      'input[name="cf-turnstile-response"], textarea[name="cf-turnstile-response"], ' +
+      'input[id="cf-turnstile-response"], textarea[id="cf-turnstile-response"]'
+    );
+    for (const field of fields) {
+      field.value = token;
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      field.dispatchEvent(new Event('change', { bubbles: true }));
+      touched += 1;
+    }
+
+    const captures = window.__hdhiveTurnstileCaptures || [];
+    const latest = captures.slice().reverse().find((item) => typeof item.callback === 'function');
+    if (latest) {
+      latest.lastToken = token;
+      latest.callback(token);
+      return true;
+    }
+    return touched > 0;
+  };
+
+  window.__hdhiveSubmitTurnstileToken = submitToken;
+
+  const patchTurnstile = (api) => {
+    if (!api || typeof api.render !== 'function' || api.render.__hdhivePatched) return;
+    const originalRender = api.render;
+    api.render = function(container, params) {
+      try {
+        const options = params || {};
+        window.__hdhiveTurnstileCaptures.push({
+          sitekey: options.sitekey || options.siteKey || '',
+          action: options.action || '',
+          cData: options.cData || options.cdata || '',
+          callback: options.callback,
+        });
+      } catch (_error) {}
+      return originalRender.apply(this, arguments);
+    };
+    Object.defineProperty(api.render, '__hdhivePatched', { value: true });
+  };
+
+  let currentTurnstile = window.turnstile;
+  Object.defineProperty(window, 'turnstile', {
+    configurable: true,
+    get() {
+      return currentTurnstile;
+    },
+    set(value) {
+      currentTurnstile = value;
+      patchTurnstile(value);
+    },
+  });
+  patchTurnstile(currentTurnstile);
+})();
+"""
+
+TURNSTILE_EXTRACT_SCRIPT = """() => {
+  const captures = window.__hdhiveTurnstileCaptures || [];
+  const captured = captures.slice().reverse().find((item) => item && item.sitekey);
+  if (captured) {
+    return {
+      websiteKey: captured.sitekey,
+      action: captured.action || '',
+      cData: captured.cData || '',
+      source: 'turnstile.render',
+      websiteURL: window.location.href,
+    };
+  }
+
+  const keyedElement = document.querySelector('[data-sitekey]');
+  if (keyedElement) {
+    return {
+      websiteKey: keyedElement.getAttribute('data-sitekey') || '',
+      action: keyedElement.getAttribute('data-action') || '',
+      cData: keyedElement.getAttribute('data-cdata') || '',
+      source: 'data-sitekey',
+      websiteURL: window.location.href,
+    };
+  }
+
+  const iframe = document.querySelector(
+    'iframe[src*="challenges.cloudflare.com"], iframe[src*="turnstile"]'
+  );
+  if (iframe && iframe.src) {
+    try {
+      const url = new URL(iframe.src);
+      const websiteKey = url.searchParams.get('sitekey') || url.searchParams.get('k') || '';
+      if (websiteKey) {
+        return {
+          websiteKey,
+          action: url.searchParams.get('action') || '',
+          cData: url.searchParams.get('cData') || url.searchParams.get('cdata') || '',
+          source: 'iframe',
+          websiteURL: window.location.href,
+        };
+      }
+    } catch (_error) {}
+  }
+  return null;
+}"""
+
+TURNSTILE_SUBMIT_SCRIPT = """(token) => {
+  if (typeof window.__hdhiveSubmitTurnstileToken === 'function') {
+    return window.__hdhiveSubmitTurnstileToken(token);
+  }
+  let touched = 0;
+  const fields = document.querySelectorAll(
+    'input[name="cf-turnstile-response"], textarea[name="cf-turnstile-response"], ' +
+    'input[id="cf-turnstile-response"], textarea[id="cf-turnstile-response"]'
+  );
+  for (const field of fields) {
+    field.value = token;
+    field.dispatchEvent(new Event('input', { bubbles: true }));
+    field.dispatchEvent(new Event('change', { bubbles: true }));
+    touched += 1;
+  }
+  return touched > 0;
+}"""
+
 # 浏览器诊断脚本：提取当前页面的指纹信息，用于排错
 DIAGNOSTICS_EVAL_SCRIPT = """() => {
   const canvas = document.createElement('canvas');
@@ -294,6 +437,16 @@ class ResponseBodyReadResult:
     header_content_type: str = ""
     header_content_length: str = ""
     header_transfer_encoding: str = ""
+
+
+@dataclass
+class TurnstileChallenge:
+    """Turnstile challenge parameters extracted from the current page."""
+    website_url: str
+    website_key: str
+    source: str = ""
+    action: str = ""
+    cdata: str = ""
 
 
 class ResponseBodyTimeout(Exception):
@@ -398,6 +551,7 @@ def build_context(browser: Browser):
     )
     # 注入防侦测脚本
     context.add_init_script(FINGERPRINT_INIT_SCRIPT)
+    context.add_init_script(TURNSTILE_INIT_SCRIPT)
     return context
 
 
@@ -456,6 +610,161 @@ def write_browser_diagnostics(page: Page, username: str, stage: str) -> Optional
     except Exception as e:
         log(f"无法保存诊断信息: {e}")
         return None
+
+
+def yescaptcha_endpoint(path: str) -> str:
+    """Build a YesCaptcha API endpoint URL."""
+    return f"{YESCAPTCHA_API_BASE_URL}/{path.lstrip('/')}"
+
+
+def post_yescaptcha_json(path: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """POST JSON to YesCaptcha and return the decoded response object."""
+    request = Request(
+        url=yescaptcha_endpoint(path),
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=YESCAPTCHA_HTTP_TIMEOUT_SECONDS) as response:
+            raw = response.read()
+            status = getattr(response, "status", 200)
+    except (HTTPError, URLError) as exc:
+        raise CheckinError(f"YesCaptcha 请求失败: {type(exc).__name__}: {exc}") from exc
+
+    if status >= 400:
+        raise CheckinError(f"YesCaptcha HTTP 状态码异常: {status}")
+
+    try:
+        parsed = json.loads(raw.decode("utf-8"))
+    except json.JSONDecodeError as exc:
+        preview = raw.decode("utf-8", errors="replace")[:200]
+        raise CheckinError(f"YesCaptcha 响应不是有效 JSON: {preview}") from exc
+
+    if not isinstance(parsed, dict):
+        raise CheckinError("YesCaptcha 响应格式异常：根节点不是 JSON 对象")
+    return parsed
+
+
+def create_yescaptcha_turnstile_task(
+    client_key: str,
+    website_url: str,
+    website_key: str,
+) -> str:
+    """Create a YesCaptcha TurnstileTaskProxyless task and return its taskId."""
+    payload = {
+        "clientKey": client_key,
+        "task": {
+            "type": YESCAPTCHA_TASK_TYPE,
+            "websiteURL": website_url,
+            "websiteKey": website_key,
+        },
+    }
+    result = post_yescaptcha_json("createTask", payload)
+    if int(result.get("errorId", 1)) != 0:
+        raise CheckinError(
+            "YesCaptcha 创建任务失败: "
+            f"{result.get('errorCode') or '-'} {result.get('errorDescription') or result}"
+        )
+    task_id = str(result.get("taskId", "")).strip()
+    if not task_id:
+        raise CheckinError(f"YesCaptcha 创建任务未返回 taskId: {result}")
+    return task_id
+
+
+def poll_yescaptcha_task(client_key: str, task_id: str) -> str:
+    """Poll YesCaptcha getTaskResult until a Turnstile token is ready."""
+    deadline = time.monotonic() + YESCAPTCHA_RESULT_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        result = post_yescaptcha_json(
+            "getTaskResult",
+            {
+                "clientKey": client_key,
+                "taskId": task_id,
+            },
+        )
+        if int(result.get("errorId", 1)) != 0:
+            raise CheckinError(
+                "YesCaptcha 获取结果失败: "
+                f"{result.get('errorCode') or '-'} {result.get('errorDescription') or result}"
+            )
+
+        status = str(result.get("status", "")).strip().lower()
+        if status == "ready":
+            solution = result.get("solution")
+            token = solution.get("token") if isinstance(solution, dict) else None
+            if not isinstance(token, str) or not token.strip():
+                raise CheckinError(f"YesCaptcha 结果缺少 solution.token: {result}")
+            return token.strip()
+
+        time.sleep(max(0.1, YESCAPTCHA_POLL_INTERVAL_SECONDS))
+
+    raise CheckinError(f"YesCaptcha 识别超时，taskId={task_id}")
+
+
+def request_yescaptcha_turnstile_token(client_key: str, website_url: str, website_key: str) -> str:
+    """Create and poll a Turnstile task, returning the one-time token."""
+    task_id = create_yescaptcha_turnstile_task(client_key, website_url, website_key)
+    log(f"YesCaptcha Turnstile 任务已创建: {task_id}")
+    return poll_yescaptcha_task(client_key, task_id)
+
+
+def extract_turnstile_challenge(page: Page) -> Optional[TurnstileChallenge]:
+    """Extract Turnstile website key from the rendered challenge, if present."""
+    try:
+        data = page.evaluate(TURNSTILE_EXTRACT_SCRIPT)
+    except Exception:
+        return None
+
+    if not isinstance(data, dict):
+        return None
+    website_key = str(data.get("websiteKey", "")).strip()
+    if not website_key:
+        return None
+
+    website_url = str(data.get("websiteURL", "")).strip() or page.url or BASE_URL
+    return TurnstileChallenge(
+        website_url=website_url,
+        website_key=website_key,
+        source=str(data.get("source", "")).strip(),
+        action=str(data.get("action", "")).strip(),
+        cdata=str(data.get("cData", "")).strip(),
+    )
+
+
+def submit_turnstile_token(page: Page, token: str) -> bool:
+    """Inject the solved Turnstile token and invoke the original callback when available."""
+    try:
+        return bool(page.evaluate(TURNSTILE_SUBMIT_SCRIPT, token))
+    except Exception as exc:
+        raise CheckinError(f"回填 Turnstile token 失败: {type(exc).__name__}: {exc}") from exc
+
+
+def solve_turnstile_challenge_if_present(page: Page, attempt: int) -> bool:
+    """Solve the current Turnstile challenge through YesCaptcha when one is visible."""
+    challenge = extract_turnstile_challenge(page)
+    if challenge is None:
+        return False
+    if not YESCAPTCHA_CLIENT_KEY:
+        raise CheckinError(
+            "检测到 Turnstile 验证，但未配置 YESCAPTCHA_CLIENT_KEY "
+            "或 local.config.json 的 yescaptcha_client_key。"
+        )
+
+    log(
+        f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 检测到 Turnstile 验证，"
+        f"source={challenge.source or '-'}, website_key={challenge.website_key[:8]}..."
+    )
+    token = request_yescaptcha_turnstile_token(
+        client_key=YESCAPTCHA_CLIENT_KEY,
+        website_url=challenge.website_url,
+        website_key=challenge.website_key,
+    )
+    if not submit_turnstile_token(page, token):
+        raise CheckinError("Turnstile token 已获取，但页面没有接受回填或回调")
+    log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] Turnstile token 已回填，继续等待签到响应...")
+    page.wait_for_timeout(1_500)
+    return True
 
 
 def dismiss_notice(page: Page) -> None:
@@ -552,6 +861,29 @@ def click_menu_entry(page: Page, label: str, *, timeout_ms: int = 5_000) -> bool
     for locator in candidates:
         if click_first_visible(locator, timeout_ms=timeout_ms):
             return True
+    try:
+        return bool(
+            page.evaluate(
+                """(label) => {
+                  const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+                  const elements = Array.from(document.querySelectorAll('a, button, [role="button"], [role="menuitem"], div, span, p'));
+                  const target = elements.find((element) => {
+                    const style = window.getComputedStyle(element);
+                    if (style.visibility === 'hidden' || style.display === 'none') return false;
+                    const rect = element.getBoundingClientRect();
+                    if (rect.width <= 0 || rect.height <= 0) return false;
+                    return normalize(element.textContent) === label;
+                  });
+                  if (!target) return false;
+                  const clickable = target.closest('a, button, [role="button"], [role="menuitem"]') || target;
+                  clickable.click();
+                  return true;
+                }""",
+                label,
+            )
+        )
+    except Exception:
+        return False
     return False
 
 
@@ -942,6 +1274,33 @@ def take_screenshot(page: Page, username: str, stage: str = "failure", *, settle
         return None
 
 
+def wait_for_checkin_action_response(
+    page: Page,
+    action_responses: list[Any],
+    attempt: int,
+    *,
+    timeout_ms: int = 60_000,
+) -> Any:
+    """Wait for the check-in Server Action, solving one Turnstile challenge if it appears first."""
+    deadline = time.monotonic() + timeout_ms / 1000
+    turnstile_solved = False
+
+    while time.monotonic() < deadline:
+        if action_responses:
+            return action_responses[0]
+
+        if not turnstile_solved:
+            turnstile_solved = solve_turnstile_challenge_if_present(page, attempt)
+
+        page.wait_for_timeout(500)
+
+    body_text = compact(page.locator("body").inner_text(timeout=3_000))
+    raise CheckinError(
+        "等待签到接口响应超时；"
+        f"当前 URL={page.url}；页面摘要={body_text[:200]}"
+    )
+
+
 def create_logged_in_session(browser: Browser, account: AccountConfig, attempt: int) -> tuple[Any, Page]:
     """Create a fresh browser context and log in once for an account."""
     context = build_context(browser)
@@ -1011,12 +1370,25 @@ def execute_attempt(page: Page, account: AccountConfig, attempt: int) -> Checkin
 def perform_checkin(page: Page, account: AccountConfig, attempt: int = 1) -> CheckinResult:
     """执行点击签到并捕获网络响应"""
     sign_label = SIGN_TYPE_TO_LABEL[account.sign_type]
+    dismiss_notice(page)
     item = menu_sign_item(page, sign_label)
     
     try:
         item.wait_for(timeout=20_000)
     except TimeoutError:
-        raise CheckinError(f"在菜单中未找到 '{sign_label}' 选项")
+        dismiss_notice(page)
+        item = menu_sign_item(page, sign_label)
+        try:
+            item.wait_for(timeout=10_000)
+        except TimeoutError as exc:
+            raise CheckinError(f"在菜单中未找到 '{sign_label}' 选项") from exc
+
+    dismiss_notice(page)
+    item = menu_sign_item(page, sign_label)
+    try:
+        item.wait_for(timeout=10_000)
+    except TimeoutError as exc:
+        raise CheckinError(f"关闭公告后未能重新找到 '{sign_label}' 选项") from exc
 
     log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 触发动作: {sign_label}...")
 
@@ -1034,17 +1406,8 @@ def perform_checkin(page: Page, account: AccountConfig, attempt: int = 1) -> Che
     page.on("response", collect_response)
     try:
         log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 等待签到 Server Action 响应...")
-        try:
-            with page.expect_response(is_checkin_action_response, timeout=60_000) as response_info:
-                item.click(force=True)
-        except TimeoutError as exc:
-            body_text = compact(page.locator("body").inner_text(timeout=3_000))
-            raise CheckinError(
-                "等待签到接口响应超时；"
-                f"当前 URL={page.url}；页面摘要={body_text[:200]}"
-            ) from exc
-
-        first_response = response_info.value
+        item.click(force=True)
+        first_response = wait_for_checkin_action_response(page, action_responses, attempt)
         if first_response not in action_responses:
             action_responses.append(first_response)
         page.wait_for_timeout(5_000)
