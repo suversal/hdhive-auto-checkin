@@ -5,13 +5,20 @@ from unittest.mock import Mock, patch
 from scripts.checkin import (
     AccountConfig,
     CheckinResult,
+    CaptchaClickPoint,
     ResponseBodyReadResult,
+    SpaceClickChallenge,
     build_telegram_message,
     choose_retry_delay,
     confirm_checkin_from_points_records,
+    create_yescaptcha_space_click_task,
     create_yescaptcha_turnstile_task,
+    extract_action_fields,
     extract_today_checkin_remark,
+    is_captcha_required_response,
+    parse_yescaptcha_click_points,
     perform_checkin,
+    request_yescaptcha_space_click_points,
     request_yescaptcha_turnstile_token,
     run_account_with_retries,
     should_retry_result,
@@ -81,6 +88,52 @@ class CheckinRetryTest(unittest.TestCase):
             },
         )
 
+    def test_create_yescaptcha_space_click_task_posts_image_prompt_payload(self) -> None:
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b'{"errorId":0,"status":"ready","solution":{"box":["120","80"]}}'
+
+        captured = {}
+
+        def fake_urlopen(request, timeout):
+            captured["request"] = request
+            captured["timeout"] = timeout
+            return FakeResponse()
+
+        challenge = SpaceClickChallenge(
+            prompt="请点击大型黄色物品。",
+            image_base64="base64-image",
+            image_width=344,
+            image_height=344,
+            display_width=344,
+            display_height=344,
+        )
+
+        with patch("scripts.checkin.urlopen", side_effect=fake_urlopen):
+            result = create_yescaptcha_space_click_task("client-key", challenge)
+
+        self.assertEqual(result["solution"]["box"], ["120", "80"])
+        request = captured["request"]
+        self.assertEqual(request.full_url, "https://api.yescaptcha.com/createTask")
+        payload = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(payload["clientKey"], "client-key")
+        self.assertEqual(
+            payload["task"],
+            {
+                "type": "HCaptchaClassification",
+                "queries": ["base64-image"],
+                "question": "请点击大型黄色物品。",
+            },
+        )
+
     def test_request_yescaptcha_turnstile_token_polls_until_ready(self) -> None:
         responses = [
             b'{"errorId":0,"taskId":"task-123"}',
@@ -116,6 +169,106 @@ class CheckinRetryTest(unittest.TestCase):
         self.assertEqual(token, "cf-token")
         sleep.assert_called_once()
 
+    def test_request_yescaptcha_space_click_points_polls_until_ready(self) -> None:
+        responses = [
+            b'{"errorId":0,"taskId":"task-456"}',
+            b'{"errorId":0,"status":"processing"}',
+            b'{"errorId":0,"status":"ready","solution":{"box":["120","80","240","160"]}}',
+        ]
+
+        class FakeResponse:
+            status = 200
+
+            def __init__(self, body):
+                self.body = body
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return self.body
+
+        challenge = SpaceClickChallenge(
+            prompt="请点击大型黄色物品。",
+            image_base64="base64-image",
+            image_width=344,
+            image_height=344,
+            display_width=344,
+            display_height=344,
+        )
+
+        with (
+            patch("scripts.checkin.urlopen", side_effect=[FakeResponse(body) for body in responses]),
+            patch("scripts.checkin.time.sleep") as sleep,
+        ):
+            points = request_yescaptcha_space_click_points("client-key", challenge)
+
+        self.assertEqual(points, [CaptchaClickPoint(120, 80), CaptchaClickPoint(240, 160)])
+        sleep.assert_called_once()
+
+    def test_parse_yescaptcha_click_points_accepts_nested_and_dict_formats(self) -> None:
+        self.assertEqual(
+            parse_yescaptcha_click_points({"box": [["120", "80"], {"x": 240, "y": 160}]}),
+            [CaptchaClickPoint(120, 80), CaptchaClickPoint(240, 160)],
+        )
+
+    def test_extract_action_fields_ignores_unrelated_page_success_fields(self) -> None:
+        text = json.dumps(
+            [
+                {"success": True, "title": "unrelated page payload"},
+                {"success": True, "description": "movie description from page payload"},
+                {
+                    "error": {
+                        "success": False,
+                        "message": "当前环境需要完成验证码验证",
+                        "description": "当前操作需要完成验证码验证后继续",
+                        "code": "400401",
+                    }
+                },
+            ],
+            ensure_ascii=False,
+        )
+
+        success, message, description = extract_action_fields(text)
+
+        self.assertFalse(success)
+        self.assertEqual(message, "当前环境需要完成验证码验证")
+        self.assertEqual(description, "当前操作需要完成验证码验证后继续")
+
+    def test_is_captcha_required_response_detects_challenge_error(self) -> None:
+        self.assertTrue(
+            is_captcha_required_response(
+                False,
+                "当前环境需要完成验证码验证",
+                "当前操作需要完成验证码验证后继续",
+                '{"challenge_type":"slider_captcha","code":"400401"}',
+            )
+        )
+
+    def test_extract_action_fields_keeps_business_error_when_later_chunks_have_success(self) -> None:
+        text = json.dumps(
+            [
+                {
+                    "error": {
+                        "success": False,
+                        "message": "签到失败",
+                        "description": "你已经签到过了，明天再来吧",
+                    }
+                },
+                {"response": {"success": True}},
+            ],
+            ensure_ascii=False,
+        )
+
+        success, message, description = extract_action_fields(text)
+
+        self.assertFalse(success)
+        self.assertEqual(message, "签到失败")
+        self.assertEqual(description, "你已经签到过了，明天再来吧")
+
     def test_wait_for_checkin_action_response_solves_turnstile_before_response(self) -> None:
         page = Mock()
         response = Mock()
@@ -132,6 +285,26 @@ class CheckinRetryTest(unittest.TestCase):
 
         self.assertIs(result, response)
         solve.assert_called_once_with(page, 1)
+
+    def test_wait_for_checkin_action_response_solves_space_click_before_response(self) -> None:
+        page = Mock()
+        response = Mock()
+        action_responses = []
+
+        def solve_space(_page, _attempt):
+            if not action_responses:
+                action_responses.append(response)
+            return True
+
+        with (
+            patch("scripts.checkin.solve_space_click_challenge_if_present", side_effect=solve_space) as solve_space_click,
+            patch("scripts.checkin.solve_turnstile_challenge_if_present") as solve_turnstile,
+        ):
+            result = wait_for_checkin_action_response(page, action_responses, attempt=1, timeout_ms=5_000)
+
+        self.assertIs(result, response)
+        solve_space_click.assert_called_once_with(page, 1)
+        solve_turnstile.assert_not_called()
 
     def test_retries_only_unknown_results(self) -> None:
         self.assertTrue(should_retry_result(make_result(None)))
@@ -410,10 +583,9 @@ class CheckinRetryTest(unittest.TestCase):
             raw_bytes_len=10,
             read_status="ok",
         )
-        item = Mock()
-
         with (
-            patch("scripts.checkin.menu_sign_item", return_value=item),
+            patch("scripts.checkin.open_user_menu", return_value=True),
+            patch("scripts.checkin.click_menu_entry", return_value=True),
             patch("scripts.checkin.wait_for_checkin_action_response", return_value=response),
             patch("scripts.checkin.select_action_response", return_value=(response, body_result, False, "签到失败", "你已经签到过了，明天再来吧")),
             patch("scripts.checkin.confirm_checkin_from_points_records", return_value="签到成功，获得 16 积分"),
@@ -437,10 +609,9 @@ class CheckinRetryTest(unittest.TestCase):
             raw_bytes_len=10,
             read_status="ok",
         )
-        item = Mock()
-
         with (
-            patch("scripts.checkin.menu_sign_item", return_value=item),
+            patch("scripts.checkin.open_user_menu", return_value=True),
+            patch("scripts.checkin.click_menu_entry", return_value=True),
             patch("scripts.checkin.wait_for_checkin_action_response", return_value=response),
             patch("scripts.checkin.select_action_response", return_value=(response, body_result, False, "签到失败", "你已经签到过了，明天再来吧")),
             patch("scripts.checkin.confirm_checkin_from_points_records", return_value=None),
@@ -450,6 +621,47 @@ class CheckinRetryTest(unittest.TestCase):
         self.assertEqual(result.status, "unknown")
         self.assertIsNone(result.response_success)
         self.assertEqual(result.result_source, "")
+
+    def test_perform_checkin_continues_after_captcha_required_response(self) -> None:
+        account = AccountConfig(username="user@example.com", password="secret", sign_type="gamble")
+        page = Mock()
+        challenge_response = Mock()
+        challenge_response.status = 200
+        challenge_response.request.headers = {"next-action": "token"}
+        success_response = Mock()
+        success_response.status = 200
+        success_response.request.headers = {"next-action": "token"}
+        challenge_body = ResponseBodyReadResult(
+            decoded_text='{"error":{"success":false,"message":"当前环境需要完成验证码验证","description":"当前操作需要完成验证码验证后继续","code":"400401"}}',
+            raw_text_preview="challenge",
+            raw_bytes_len=10,
+            read_status="ok",
+        )
+        success_body = ResponseBodyReadResult(
+            decoded_text='{"response":{"success":true,"message":"","description":"获得 20 积分"}}',
+            raw_text_preview="success",
+            raw_bytes_len=10,
+            read_status="ok",
+        )
+
+        with (
+            patch("scripts.checkin.open_user_menu", return_value=True),
+            patch("scripts.checkin.click_menu_entry", return_value=True),
+            patch("scripts.checkin.wait_for_checkin_action_response", return_value=challenge_response),
+            patch(
+                "scripts.checkin.select_action_response",
+                side_effect=[
+                    (challenge_response, challenge_body, False, "当前环境需要完成验证码验证", "当前操作需要完成验证码验证后继续"),
+                    (success_response, success_body, True, "", "获得 20 积分"),
+                ],
+            ),
+            patch("scripts.checkin.wait_for_challenge_followup_responses", return_value=[success_response]) as wait_followup,
+        ):
+            result = perform_checkin(page, account, attempt=1)
+
+        self.assertEqual(result.status, "success")
+        self.assertEqual(result.description, "获得 20 积分")
+        wait_followup.assert_called_once_with(page, 1)
 
 
 if __name__ == "__main__":

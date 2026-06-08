@@ -95,7 +95,7 @@ TELEGRAM_CHAT_ID = get_config_value("TELEGRAM_CHAT_ID", "", "telegram_chat_id")
 RESPONSE_BODY_TIMEOUT_SECONDS = float(
     get_config_value("HDHIVE_RESPONSE_BODY_TIMEOUT_SECONDS", "15", "response_body_timeout_seconds")
 )
-MAX_CHECKIN_ATTEMPTS = max(1, int(get_config_value("HDHIVE_MAX_ATTEMPTS", "5", "max_attempts")))
+MAX_CHECKIN_ATTEMPTS = max(1, int(get_config_value("HDHIVE_MAX_ATTEMPTS", "3", "max_attempts")))
 RETRY_BASE_DELAY_SECONDS = float(
     get_config_value("HDHIVE_RETRY_BASE_DELAY_SECONDS", "5", "retry_base_delay_seconds")
 )
@@ -106,6 +106,9 @@ YESCAPTCHA_API_BASE_URL = get_config_value(
 YESCAPTCHA_TASK_TYPE = get_config_value(
     "YESCAPTCHA_TASK_TYPE", "TurnstileTaskProxyless", "yescaptcha_task_type"
 ) or "TurnstileTaskProxyless"
+YESCAPTCHA_SPACE_TASK_TYPE = get_config_value(
+    "YESCAPTCHA_SPACE_TASK_TYPE", "HCaptchaClassification", "yescaptcha_space_task_type"
+) or "HCaptchaClassification"
 YESCAPTCHA_HTTP_TIMEOUT_SECONDS = float(
     get_config_value("YESCAPTCHA_HTTP_TIMEOUT_SECONDS", "30", "yescaptcha_http_timeout_seconds")
 )
@@ -114,6 +117,10 @@ YESCAPTCHA_RESULT_TIMEOUT_SECONDS = float(
 )
 YESCAPTCHA_POLL_INTERVAL_SECONDS = float(
     get_config_value("YESCAPTCHA_POLL_INTERVAL_SECONDS", "3", "yescaptcha_poll_interval_seconds")
+)
+YESCAPTCHA_SPACE_MAX_SOLVES = max(
+    1,
+    int(get_config_value("YESCAPTCHA_SPACE_MAX_SOLVES", "2", "yescaptcha_space_max_solves")),
 )
 
 SIGN_TYPE_TO_LABEL = {
@@ -357,6 +364,61 @@ TURNSTILE_SUBMIT_SCRIPT = """(token) => {
   return touched > 0;
 }"""
 
+SPACE_CLICK_CHALLENGE_SCRIPT = """() => {
+  const root = Array.from(document.querySelectorAll('[class*="SpaceClickCaptcha_container"]'))
+    .find((element) => {
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+    });
+  if (!root) return null;
+
+  const promptElement = root.querySelector('[class*="SpaceClickCaptcha_prompt"], [role="button"][aria-label]');
+  const image = root.querySelector('img[src^="data:image/"], canvas');
+  const stage = root.querySelector('[class*="SpaceClickCaptcha_stage"], [role="button"]');
+  if (!image || !stage) return null;
+
+  let src = '';
+  let naturalWidth = 0;
+  let naturalHeight = 0;
+  if (image.tagName && image.tagName.toLowerCase() === 'canvas') {
+    try {
+      src = image.toDataURL('image/jpeg', 0.92);
+      naturalWidth = image.width || 0;
+      naturalHeight = image.height || 0;
+    } catch (_error) {
+      return null;
+    }
+  } else {
+    src = image.getAttribute('src') || '';
+    naturalWidth = image.naturalWidth || image.width || 0;
+    naturalHeight = image.naturalHeight || image.height || 0;
+  }
+
+  const imageRect = image.getBoundingClientRect();
+  const stageRect = stage.getBoundingClientRect();
+  const prompt =
+    (promptElement && (promptElement.textContent || promptElement.getAttribute('aria-label'))) ||
+    stage.getAttribute('aria-label') ||
+    '';
+
+  const marker = ';base64,';
+  const markerIndex = src.indexOf(marker);
+  const body = markerIndex >= 0 ? src.slice(markerIndex + marker.length) : src;
+  if (!body || !prompt.trim()) return null;
+
+  return {
+    prompt: prompt.trim(),
+    imageBase64: body,
+    imageWidth: naturalWidth || imageRect.width,
+    imageHeight: naturalHeight || imageRect.height,
+    displayWidth: imageRect.width,
+    displayHeight: imageRect.height,
+    imageOffsetX: imageRect.left - stageRect.left,
+    imageOffsetY: imageRect.top - stageRect.top,
+  };
+}"""
+
 # 浏览器诊断脚本：提取当前页面的指纹信息，用于排错
 DIAGNOSTICS_EVAL_SCRIPT = """() => {
   const canvas = document.createElement('canvas');
@@ -447,6 +509,26 @@ class TurnstileChallenge:
     source: str = ""
     action: str = ""
     cdata: str = ""
+
+
+@dataclass
+class SpaceClickChallenge:
+    """HDHive in-page space-click captcha payload extracted from the modal."""
+    prompt: str
+    image_base64: str
+    image_width: float
+    image_height: float
+    display_width: float
+    display_height: float
+    image_offset_x: float = 0
+    image_offset_y: float = 0
+
+
+@dataclass
+class CaptchaClickPoint:
+    """A click coordinate returned by the image-recognition service."""
+    x: float
+    y: float
 
 
 class ResponseBodyTimeout(Exception):
@@ -709,6 +791,112 @@ def request_yescaptcha_turnstile_token(client_key: str, website_url: str, websit
     return poll_yescaptcha_task(client_key, task_id)
 
 
+def create_yescaptcha_space_click_task(client_key: str, challenge: SpaceClickChallenge) -> dict[str, Any]:
+    """Create a YesCaptcha image-coordinate recognition task for HDHive's space-click modal."""
+    payload = {
+        "clientKey": client_key,
+        "task": {
+            "type": YESCAPTCHA_SPACE_TASK_TYPE,
+            "queries": [challenge.image_base64],
+            "question": challenge.prompt,
+        },
+    }
+    result = post_yescaptcha_json("createTask", payload)
+    if int(result.get("errorId", 1)) != 0:
+        raise CheckinError(
+            "YesCaptcha 创建点选识别任务失败: "
+            f"{result.get('errorCode') or '-'} {result.get('errorDescription') or result}"
+        )
+    return result
+
+
+def poll_yescaptcha_solution(client_key: str, task_id: str) -> dict[str, Any]:
+    """Poll YesCaptcha getTaskResult and return the ready solution object."""
+    deadline = time.monotonic() + YESCAPTCHA_RESULT_TIMEOUT_SECONDS
+    while time.monotonic() < deadline:
+        result = post_yescaptcha_json(
+            "getTaskResult",
+            {
+                "clientKey": client_key,
+                "taskId": task_id,
+            },
+        )
+        if int(result.get("errorId", 1)) != 0:
+            raise CheckinError(
+                "YesCaptcha 获取结果失败: "
+                f"{result.get('errorCode') or '-'} {result.get('errorDescription') or result}"
+            )
+
+        status = str(result.get("status", "")).strip().lower()
+        if status == "ready":
+            solution = result.get("solution")
+            if not isinstance(solution, dict):
+                raise CheckinError(f"YesCaptcha 结果缺少 solution 对象: {result}")
+            return solution
+
+        time.sleep(max(0.1, YESCAPTCHA_POLL_INTERVAL_SECONDS))
+
+    raise CheckinError(f"YesCaptcha 识别超时，taskId={task_id}")
+
+
+def parse_yescaptcha_click_points(solution: dict[str, Any]) -> list[CaptchaClickPoint]:
+    """Parse YesCaptcha coordinate solutions into ordered click points."""
+    raw_box = solution.get("box")
+    if raw_box is None:
+        raw_box = solution.get("boxes")
+    if raw_box is None:
+        raw_box = solution.get("coordinates")
+    if raw_box is None:
+        raise CheckinError(f"YesCaptcha 点选结果缺少坐标字段: {solution}")
+
+    flattened: list[Any] = []
+    if isinstance(raw_box, list):
+        for item in raw_box:
+            if isinstance(item, dict):
+                flattened.extend([item.get("x"), item.get("y")])
+            elif isinstance(item, (list, tuple)):
+                flattened.extend(list(item))
+            else:
+                flattened.append(item)
+    elif isinstance(raw_box, dict):
+        flattened.extend([raw_box.get("x"), raw_box.get("y")])
+    else:
+        raise CheckinError(f"YesCaptcha 点选坐标格式异常: {solution}")
+
+    numbers: list[float] = []
+    for item in flattened:
+        if item is None:
+            continue
+        try:
+            numbers.append(float(str(item).strip()))
+        except ValueError as exc:
+            raise CheckinError(f"YesCaptcha 点选坐标不是数字: {item!r}") from exc
+
+    if len(numbers) < 2 or len(numbers) % 2 != 0:
+        raise CheckinError(f"YesCaptcha 点选坐标数量异常: {solution}")
+
+    return [
+        CaptchaClickPoint(x=numbers[index], y=numbers[index + 1])
+        for index in range(0, len(numbers), 2)
+    ]
+
+
+def request_yescaptcha_space_click_points(client_key: str, challenge: SpaceClickChallenge) -> list[CaptchaClickPoint]:
+    """Recognize HDHive's space-click captcha and return image-relative click coordinates."""
+    result = create_yescaptcha_space_click_task(client_key, challenge)
+    solution = result.get("solution")
+    if isinstance(solution, dict):
+        log("YesCaptcha 点选识别同步返回结果")
+        return parse_yescaptcha_click_points(solution)
+
+    task_id = str(result.get("taskId", "")).strip()
+    if not task_id:
+        raise CheckinError(f"YesCaptcha 点选识别任务未返回 taskId 或 solution: {result}")
+
+    log(f"YesCaptcha 点选识别任务已创建: {task_id}")
+    return parse_yescaptcha_click_points(poll_yescaptcha_solution(client_key, task_id))
+
+
 def extract_turnstile_challenge(page: Page) -> Optional[TurnstileChallenge]:
     """Extract Turnstile website key from the rendered challenge, if present."""
     try:
@@ -767,11 +955,111 @@ def solve_turnstile_challenge_if_present(page: Page, attempt: int) -> bool:
     return True
 
 
-def dismiss_notice(page: Page) -> None:
+def extract_space_click_challenge(page: Page) -> Optional[SpaceClickChallenge]:
+    """Extract HDHive's in-page image-click challenge, if the modal is visible."""
+    try:
+        data = page.evaluate(SPACE_CLICK_CHALLENGE_SCRIPT)
+    except Exception:
+        return None
+
+    if not isinstance(data, dict):
+        return None
+
+    prompt = str(data.get("prompt", "")).strip()
+    image_base64 = str(data.get("imageBase64", "")).strip()
+    if not prompt or not image_base64:
+        return None
+
+    try:
+        image_width = float(data.get("imageWidth") or 0)
+        image_height = float(data.get("imageHeight") or 0)
+        display_width = float(data.get("displayWidth") or 0)
+        display_height = float(data.get("displayHeight") or 0)
+        image_offset_x = float(data.get("imageOffsetX") or 0)
+        image_offset_y = float(data.get("imageOffsetY") or 0)
+    except (TypeError, ValueError):
+        return None
+
+    if image_width <= 0 or image_height <= 0 or display_width <= 0 or display_height <= 0:
+        return None
+
+    return SpaceClickChallenge(
+        prompt=prompt,
+        image_base64=image_base64,
+        image_width=image_width,
+        image_height=image_height,
+        display_width=display_width,
+        display_height=display_height,
+        image_offset_x=image_offset_x,
+        image_offset_y=image_offset_y,
+    )
+
+
+def click_space_captcha_points(page: Page, challenge: SpaceClickChallenge, points: list[CaptchaClickPoint]) -> None:
+    """Click solver-returned image coordinates inside the HDHive space-click captcha stage."""
+    dismiss_notice(page, wait_for_appearance_ms=2_000)
+    stage = page.locator('[class*="SpaceClickCaptcha_stage"], [role="button"][aria-label*="请点击"]').first
+    stage.wait_for(timeout=5_000)
+
+    scale_x = challenge.display_width / challenge.image_width
+    scale_y = challenge.display_height / challenge.image_height
+    for index, point in enumerate(points, start=1):
+        if 0 <= point.x <= challenge.display_width and 0 <= point.y <= challenge.display_height:
+            click_x = challenge.image_offset_x + point.x
+            click_y = challenge.image_offset_y + point.y
+        else:
+            click_x = challenge.image_offset_x + point.x * scale_x
+            click_y = challenge.image_offset_y + point.y * scale_y
+        log(
+            f"点击点选验证码坐标 {index}/{len(points)}: "
+            f"image=({point.x:.1f},{point.y:.1f}) display=({click_x:.1f},{click_y:.1f})"
+        )
+        stage.click(position={"x": click_x, "y": click_y}, force=True, timeout=5_000)
+        page.wait_for_timeout(500)
+
+
+def solve_space_click_challenge_if_present(page: Page, attempt: int) -> bool:
+    """Solve HDHive's space-click image captcha through YesCaptcha when it is visible."""
+    dismiss_notice(page, wait_for_appearance_ms=2_000)
+    challenge = extract_space_click_challenge(page)
+    if challenge is None:
+        return False
+    if not YESCAPTCHA_CLIENT_KEY:
+        raise CheckinError(
+            "检测到 HDHive 点选验证码，但未配置 YESCAPTCHA_CLIENT_KEY "
+            "或 local.config.json 的 yescaptcha_client_key。"
+        )
+
+    log(
+        f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 检测到 HDHive 点选验证码，"
+        f"task_type={YESCAPTCHA_SPACE_TASK_TYPE}, prompt={challenge.prompt}"
+    )
+    points = request_yescaptcha_space_click_points(YESCAPTCHA_CLIENT_KEY, challenge)
+    if not points:
+        raise CheckinError("YesCaptcha 点选识别未返回任何坐标")
+
+    click_space_captcha_points(page, challenge, points)
+    log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 点选验证码已点击，继续等待签到响应...")
+    page.wait_for_timeout(2_000)
+    return True
+
+
+def dismiss_notice(page: Page, *, wait_for_appearance_ms: int = 0) -> bool:
     """尝试关闭首页的公告/通知弹窗"""
     button = page.get_by_role("button", name=re.compile(r"我知道了"))
-    if button.count() == 0:
-        return
+    appearance_deadline = time.time() + max(0, wait_for_appearance_ms) / 1000
+    while True:
+        try:
+            count = button.count()
+            if not isinstance(count, int):
+                return False
+            if count > 0:
+                break
+        except Exception:
+            pass
+        if time.time() >= appearance_deadline:
+            return False
+        page.wait_for_timeout(500)
     
     log("发现公告弹窗，正在尝试关闭...")
     deadline = time.time() + 12
@@ -781,10 +1069,11 @@ def dismiss_notice(page: Page) -> None:
                 button.first.click(force=True, timeout=2_000)
                 log("成功关闭公告")
                 page.wait_for_timeout(800)
-                return
+                return True
         except Exception:
             pass
         page.wait_for_timeout(500)
+    return False
 
 
 def login(page: Page, account: AccountConfig) -> None:
@@ -808,7 +1097,7 @@ def login(page: Page, account: AccountConfig) -> None:
         raise CheckinError(f"登录超时或失败，未进入主界面。") from exc
     
     page.wait_for_timeout(2_000)
-    dismiss_notice(page)
+    dismiss_notice(page, wait_for_appearance_ms=12_000)
 
 
 def menu_sign_item(page: Page, sign_label: str):
@@ -1170,7 +1459,8 @@ def extract_action_fields(text: str) -> tuple[Optional[bool], str, str]:
     except json.JSONDecodeError:
         return None, "", normalized[:200]
 
-    if isinstance(payload, dict):
+    payload_is_root_dict = isinstance(payload, dict)
+    if payload_is_root_dict:
         payload = [payload]
     if not isinstance(payload, list):
         return None, "", normalized[:200]
@@ -1186,19 +1476,42 @@ def extract_action_fields(text: str) -> tuple[Optional[bool], str, str]:
             current = chunk["response"]
         elif isinstance(chunk.get("error"), dict):
             current = chunk["error"]
-        else:
+        elif payload_is_root_dict and any(key in chunk for key in ("message", "description")):
             current = chunk
+        else:
+            continue
         if not isinstance(current, dict):
             continue
 
-        if "success" in current and isinstance(current["success"], bool):
-            success = current["success"]
-        if not message and isinstance(current.get("message"), str):
-            message = current["message"]
-        if not description and isinstance(current.get("description"), str):
-            description = current["description"]
+        current_message = current.get("message") if isinstance(current.get("message"), str) else ""
+        current_description = current.get("description") if isinstance(current.get("description"), str) else ""
+        current_success = current.get("success") if isinstance(current.get("success"), bool) else None
+
+        if current_message or current_description:
+            return current_success, current_message, current_description
+        if success is None and current_success is not None:
+            success = current_success
 
     return success, message, description
+
+
+def is_captcha_required_response(
+    response_success: Optional[bool],
+    message: str,
+    description: str,
+    raw_response: str,
+) -> bool:
+    """Return True when the Server Action says the operation must continue through captcha."""
+    text = compact(" ".join([message, description, raw_response[:2_000]]))
+    return (
+        response_success is False
+        and (
+            "需要完成验证码" in text
+            or "challenge_type" in text
+            or '"code":"400401"' in text
+            or '"code": "400401"' in text
+        )
+    )
 
 
 def status_emoji(status: str) -> str:
@@ -1281,13 +1594,19 @@ def wait_for_checkin_action_response(
     *,
     timeout_ms: int = 60_000,
 ) -> Any:
-    """Wait for the check-in Server Action, solving one Turnstile challenge if it appears first."""
+    """Wait for the check-in Server Action, solving visible captcha challenges first."""
     deadline = time.monotonic() + timeout_ms / 1000
     turnstile_solved = False
+    space_click_solves = 0
 
     while time.monotonic() < deadline:
         if action_responses:
             return action_responses[0]
+
+        if space_click_solves < YESCAPTCHA_SPACE_MAX_SOLVES:
+            if solve_space_click_challenge_if_present(page, attempt):
+                space_click_solves += 1
+                continue
 
         if not turnstile_solved:
             turnstile_solved = solve_turnstile_challenge_if_present(page, attempt)
@@ -1297,6 +1616,54 @@ def wait_for_checkin_action_response(
     body_text = compact(page.locator("body").inner_text(timeout=3_000))
     raise CheckinError(
         "等待签到接口响应超时；"
+        f"当前 URL={page.url}；页面摘要={body_text[:200]}"
+    )
+
+
+def wait_for_challenge_followup_responses(
+    page: Page,
+    attempt: int,
+    *,
+    timeout_ms: int = 120_000,
+) -> list[Any]:
+    """Solve a visible captcha challenge and collect the next check-in Server Action response."""
+    followup_responses: list[Any] = []
+
+    def collect_response(response) -> None:
+        if is_checkin_action_response(response):
+            followup_responses.append(response)
+            next_action = response.request.headers.get("next-action", "")
+            log(
+                f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 捕获验证后候选响应: "
+                f"status={response.status}, next-action={next_action[:10]}..., url={response.url}"
+            )
+
+    page.on("response", collect_response)
+    deadline = time.monotonic() + timeout_ms / 1000
+    turnstile_solved = False
+    space_click_solves = 0
+    try:
+        while time.monotonic() < deadline:
+            if followup_responses:
+                return followup_responses
+
+            if space_click_solves < YESCAPTCHA_SPACE_MAX_SOLVES:
+                if solve_space_click_challenge_if_present(page, attempt):
+                    space_click_solves += 1
+                    continue
+
+            if not turnstile_solved:
+                turnstile_solved = solve_turnstile_challenge_if_present(page, attempt)
+                if turnstile_solved:
+                    continue
+
+            page.wait_for_timeout(500)
+    finally:
+        page.remove_listener("response", collect_response)
+
+    body_text = compact(page.locator("body").inner_text(timeout=3_000))
+    raise CheckinError(
+        "等待验证码完成后的签到响应超时；"
         f"当前 URL={page.url}；页面摘要={body_text[:200]}"
     )
 
@@ -1317,7 +1684,7 @@ def prepare_retry_page(page: Page, attempt: int) -> bool:
         page.goto(BASE_URL, wait_until="domcontentloaded", timeout=30_000)
         page.wait_for_timeout(3_000)
         page.locator('button[aria-label="用户菜单"]').wait_for(timeout=10_000)
-        dismiss_notice(page)
+        dismiss_notice(page, wait_for_appearance_ms=12_000)
         log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 当前会话仍有效，无需重新登录。")
         return True
     except Exception as exc:
@@ -1370,25 +1737,11 @@ def execute_attempt(page: Page, account: AccountConfig, attempt: int) -> Checkin
 def perform_checkin(page: Page, account: AccountConfig, attempt: int = 1) -> CheckinResult:
     """执行点击签到并捕获网络响应"""
     sign_label = SIGN_TYPE_TO_LABEL[account.sign_type]
-    dismiss_notice(page)
-    item = menu_sign_item(page, sign_label)
-    
-    try:
-        item.wait_for(timeout=20_000)
-    except TimeoutError:
-        dismiss_notice(page)
-        item = menu_sign_item(page, sign_label)
-        try:
-            item.wait_for(timeout=10_000)
-        except TimeoutError as exc:
-            raise CheckinError(f"在菜单中未找到 '{sign_label}' 选项") from exc
-
-    dismiss_notice(page)
-    item = menu_sign_item(page, sign_label)
-    try:
-        item.wait_for(timeout=10_000)
-    except TimeoutError as exc:
-        raise CheckinError(f"关闭公告后未能重新找到 '{sign_label}' 选项") from exc
+    dismiss_notice(page, wait_for_appearance_ms=12_000)
+    if not open_user_menu(page, timeout_ms=10_000):
+        dismiss_notice(page, wait_for_appearance_ms=3_000)
+        if not open_user_menu(page, timeout_ms=10_000):
+            raise CheckinError("未能打开用户菜单")
 
     log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 触发动作: {sign_label}...")
 
@@ -1406,7 +1759,10 @@ def perform_checkin(page: Page, account: AccountConfig, attempt: int = 1) -> Che
     page.on("response", collect_response)
     try:
         log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 等待签到 Server Action 响应...")
-        item.click(force=True)
+        if not click_menu_entry(page, sign_label, timeout_ms=10_000):
+            dismiss_notice(page, wait_for_appearance_ms=3_000)
+            if not open_user_menu(page, timeout_ms=10_000) or not click_menu_entry(page, sign_label, timeout_ms=10_000):
+                raise CheckinError(f"在菜单中未找到或未能点击 '{sign_label}' 选项")
         first_response = wait_for_checkin_action_response(page, action_responses, attempt)
         if first_response not in action_responses:
             action_responses.append(first_response)
@@ -1416,6 +1772,27 @@ def perform_checkin(page: Page, account: AccountConfig, attempt: int = 1) -> Che
 
     response, body_result, response_success, message, description = select_action_response(action_responses)
     raw_response = body_result.decoded_text
+    if is_captcha_required_response(response_success, message, description, raw_response):
+        log(
+            f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 签到接口要求完成验证码，"
+            "等待验证码弹窗并继续处理..."
+        )
+        followup_responses = wait_for_challenge_followup_responses(page, attempt)
+        action_responses.extend(followup_responses)
+        response, body_result, response_success, message, description = select_action_response(followup_responses)
+        raw_response = body_result.decoded_text
+    elif response_success is None and (
+        extract_space_click_challenge(page) is not None or extract_turnstile_challenge(page) is not None
+    ):
+        log(
+            f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 签到响应未解析出结果，但页面存在验证码，"
+            "继续处理验证..."
+        )
+        followup_responses = wait_for_challenge_followup_responses(page, attempt)
+        action_responses.extend(followup_responses)
+        response, body_result, response_success, message, description = select_action_response(followup_responses)
+        raw_response = body_result.decoded_text
+
     log(
         f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 捕获到 {len(action_responses)} 个服务器响应，"
         f"选用 HTTP 状态码: {response.status}"
@@ -1434,7 +1811,8 @@ def perform_checkin(page: Page, account: AccountConfig, attempt: int = 1) -> Che
         )
     if body_result.raw_text_preview:
         log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] raw_text_preview: {body_result.raw_text_preview}")
-    log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] raw_response: {raw_response}")
+    raw_response_preview = raw_response[:1_000] + ("..." if len(raw_response) > 1_000 else "")
+    log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] raw_response: {raw_response_preview}")
 
     if response_success is True:
         status = "success"
