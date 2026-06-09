@@ -1,10 +1,10 @@
 <div align="center">
   <h1>🚨 HDHive 自动签到 🚨</h1>
   <p><b>基于 `Python + Playwright` 编写的 HDHive 自动化签到工具</b></p>
-  <p><b>⚠️ 重要提醒：由于 HDHive 官网已接入 Cloudflare 验证，当前 Playwright 网页签到方案已无法稳定使用。</b></p>
-  <p><b>如果你需要继续自动签到，推荐切换到 <code>telethon</code> 分支，使用 Telegram 机器人签到方案。</b></p>
+  <p><b>⚠️ 重要提醒：HDHive 官网可能在签到前触发 Cloudflare Turnstile 或站内点选验证码，当前分支已接入 YesCaptcha 进行自动处理。</b></p>
+  <p><b>站点验证策略会变化，建议与 <code>telethon</code> 分支并行观察一段时间；如不想依赖网页验证码，也可以切换到 Telegram 机器人签到方案。</b></p>
   <p><b>由于 HDHive 站点使用了 Next.js Server Actions，其请求头中包含了动态的 `Next_Action` 校验参数，使用传统的纯 HTTP 请求（如 requests/curl）进行模拟非常繁琐且易失效，需要频繁抓包修改配置。故新版本通过 Playwright 驱动真实浏览器进行自动化操作，完美绕过动态参数校验，实现更加稳定的自动化签到。</b></p>
-  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/telethon">当前推荐方案：Telegram 机器人签到版</a> 👈</h3>
+  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/telethon">备用方案：Telegram 机器人签到版</a> 👈</h3>
   <h3>👉 <a href="https://github.com/suversal/auto-check">旧版方案地址：HDHive自动化签到工具 (传统HTTP请求版 需手动维护ActionId)</a> 👈</h3>
   <br/>
 </div>
@@ -35,6 +35,7 @@
 
 #### 🔐 添加 Repository Secrets (机密信息，不可见)
 - `HDHIVE_ACCOUNTS_JSON` **(必填)**: 你的 HDHive 账号配置，格式要求为 JSON 数组。
+- `YESCAPTCHA_CLIENT_KEY` (验证码触发时必填): YesCaptcha 客户端密钥，用于处理 Cloudflare Turnstile 和 HDHive 站内点选验证码。
 - `TELEGRAM_BOT_TOKEN` (可选): 如果你需要 Telegram 推送，填入你的 Bot Token。
 
 **`HDHIVE_ACCOUNTS_JSON` 配置示例：**
@@ -121,7 +122,7 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 - `YESCAPTCHA_API_BASE_URL`：YesCaptcha API 节点，默认 `https://api.yescaptcha.com`
 - `YESCAPTCHA_TASK_TYPE`：Cloudflare Turnstile 任务类型，默认 `TurnstileTaskProxyless`
 - `YESCAPTCHA_SPACE_TASK_TYPE`：HDHive 站内点选验证码识别任务类型，默认 `HCaptchaClassification`
-- `YESCAPTCHA_SPACE_IMAGE_SOURCE`：提交给 YesCaptcha 的点选验证码图片来源，默认 `original`，可选 `screenshot`
+- `YESCAPTCHA_SPACE_IMAGE_SOURCE`：提交给 YesCaptcha 的点选验证码图片来源，默认 `original`。点选验证码已验证应提交网页原始图片和原始中文提示；`screenshot` 仅保留为排障选项
 - `YESCAPTCHA_SPACE_MAX_SOLVES`：单次签到尝试内最多处理几轮站内点选验证码，默认 `3`
 - `HDHIVE_SPACE_CHALLENGE_SETTLE_SECONDS`：点选验证码弹出后等待图片和提示稳定的秒数，默认 `1.5`
 - `HDHIVE_SPACE_CLICK_DELAY_SECONDS`：点选验证码多坐标点击之间的间隔秒数，默认 `0.8`
@@ -129,6 +130,12 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 - `YESCAPTCHA_POLL_INTERVAL_SECONDS`：轮询 YesCaptcha 结果的间隔秒数，默认 `3`
 - `TELEGRAM_BOT_TOKEN`：Telegram Bot Token
 - `TELEGRAM_CHAT_ID`：默认 Telegram Chat ID
+
+验证码处理说明：
+
+- 如果签到前触发 Cloudflare Turnstile，脚本会提取页面 `websiteKey` 并通过 YesCaptcha 获取 token 后提交。
+- 如果触发 HDHive 站内 `Security Verification` 点选验证码，脚本会等待验证码弹窗稳定，读取原始验证码图片和中文提示，调用 YesCaptcha `HCaptchaClassification` 返回点击坐标，再按页面显示比例点击。
+- 验证失败时脚本会刷新点选验证码并重试，达到 `YESCAPTCHA_SPACE_MAX_SOLVES` 后停止本轮签到尝试，避免持续错误点击。
 
 本地文件与环境变量的优先级：
 
