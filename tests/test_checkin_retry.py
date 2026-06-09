@@ -9,7 +9,9 @@ from scripts.checkin import (
     ResponseBodyReadResult,
     SpaceClickChallenge,
     build_telegram_message,
+    capture_space_click_challenge_display_image,
     choose_retry_delay,
+    clear_notice_before_captcha_action,
     confirm_checkin_from_points_records,
     create_yescaptcha_space_click_task,
     create_yescaptcha_turnstile_task,
@@ -20,8 +22,13 @@ from scripts.checkin import (
     perform_checkin,
     request_yescaptcha_space_click_points,
     request_yescaptcha_turnstile_token,
+    normalize_space_click_prompt,
+    refresh_expired_space_click_challenge,
     run_account_with_retries,
     should_retry_result,
+    space_click_challenge_visible,
+    space_click_display_position,
+    space_click_needs_retry_message,
     wait_for_checkin_action_response,
     click_menu_entry,
 )
@@ -125,13 +132,30 @@ class CheckinRetryTest(unittest.TestCase):
         self.assertEqual(request.full_url, "https://api.yescaptcha.com/createTask")
         payload = json.loads(request.data.decode("utf-8"))
         self.assertEqual(payload["clientKey"], "client-key")
+        self.assertEqual(payload["task"]["type"], "HCaptchaClassification")
+        self.assertEqual(payload["task"]["queries"], ["base64-image"])
+        self.assertEqual(payload["task"]["question"], "Click the large yellow object.")
+
+    def test_normalize_space_click_prompt_translates_spatial_relation(self) -> None:
         self.assertEqual(
-            payload["task"],
-            {
-                "type": "HCaptchaClassification",
-                "queries": ["base64-image"],
-                "question": "请点击大型黄色物品。",
-            },
+            normalize_space_click_prompt("请点击在灰色多面体后面的立方体。"),
+            "Click the cube behind the gray polyhedron.",
+        )
+        self.assertEqual(
+            normalize_space_click_prompt("请点击与绿色圆柱体有相同大小的圆锥。"),
+            "Click the cone with the same size as the green cylinder.",
+        )
+        self.assertEqual(
+            normalize_space_click_prompt("请点击在小型正方体后面的物品。"),
+            "Click the object behind the small cube.",
+        )
+        self.assertEqual(
+            normalize_space_click_prompt("请点击与蓝色物体有相同形状的物体。"),
+            "Click the object with the same shape as the blue object.",
+        )
+        self.assertEqual(
+            normalize_space_click_prompt("请点击大尺寸灰色物体。"),
+            "Click the large gray object.",
         )
 
     def test_request_yescaptcha_turnstile_token_polls_until_ready(self) -> None:
@@ -214,6 +238,89 @@ class CheckinRetryTest(unittest.TestCase):
             parse_yescaptcha_click_points({"box": [["120", "80"], {"x": 240, "y": 160}]}),
             [CaptchaClickPoint(120, 80), CaptchaClickPoint(240, 160)],
         )
+
+    def test_space_click_display_position_scales_from_uploaded_image_coordinates(self) -> None:
+        challenge = SpaceClickChallenge(
+            prompt="请点击目标",
+            image_base64="base64-image",
+            image_width=344,
+            image_height=344,
+            display_width=414,
+            display_height=187,
+            image_offset_x=12,
+            image_offset_y=8,
+        )
+
+        x, y = space_click_display_position(challenge, CaptchaClickPoint(86, 172))
+
+        self.assertAlmostEqual(x, 12 + 86 * 414 / 344)
+        self.assertAlmostEqual(y, 8 + 172 * 187 / 344)
+
+    def test_capture_space_click_challenge_display_image_uses_visible_clip(self) -> None:
+        page = Mock()
+        page.screenshot.return_value = b"visible-image"
+        challenge = SpaceClickChallenge(
+            prompt="请点击目标",
+            image_base64="original-image",
+            image_width=344,
+            image_height=344,
+            display_width=414,
+            display_height=187,
+            image_offset_x=12,
+            image_offset_y=8,
+            image_viewport_x=50,
+            image_viewport_y=80,
+        )
+
+        updated = capture_space_click_challenge_display_image(page, challenge)
+
+        self.assertEqual(updated.image_base64, "dmlzaWJsZS1pbWFnZQ==")
+        self.assertEqual(updated.image_width, 414)
+        self.assertEqual(updated.image_height, 187)
+        self.assertEqual(updated.display_width, 414)
+        self.assertEqual(updated.display_height, 187)
+        page.screenshot.assert_called_once_with(
+            type="jpeg",
+            quality=92,
+            scale="css",
+            clip={"x": 50, "y": 80, "width": 414, "height": 187},
+        )
+
+    def test_refresh_expired_space_click_challenge_waits_after_refresh_click(self) -> None:
+        page = Mock()
+        page.evaluate.return_value = True
+
+        refreshed = refresh_expired_space_click_challenge(page)
+
+        self.assertTrue(refreshed)
+        page.wait_for_timeout.assert_called_once_with(1_500)
+
+    def test_space_click_retry_message_detects_incorrect_position_prompt(self) -> None:
+        self.assertTrue(space_click_needs_retry_message("点击位置不正确，请重试"))
+        self.assertTrue(space_click_needs_retry_message("验证码无效或已过期"))
+        self.assertFalse(space_click_needs_retry_message("请点击绿色圆柱体"))
+
+    def test_clear_notice_before_captcha_action_closes_late_notice_until_stable(self) -> None:
+        page = Mock()
+
+        with patch("scripts.checkin.dismiss_notice", side_effect=[True, False]) as dismiss_notice:
+            clear_notice_before_captcha_action(page, wait_for_appearance_ms=12_000)
+
+        self.assertEqual(dismiss_notice.call_count, 2)
+        dismiss_notice.assert_any_call(page, wait_for_appearance_ms=12_000)
+        dismiss_notice.assert_any_call(page, wait_for_appearance_ms=1_000)
+
+    def test_wait_for_checkin_action_response_fails_fast_after_space_click_limit(self) -> None:
+        page = Mock()
+
+        with (
+            patch("scripts.checkin.YESCAPTCHA_SPACE_MAX_SOLVES", 1),
+            patch("scripts.checkin.solve_space_click_challenge_if_present", return_value=True),
+            patch("scripts.checkin.solve_turnstile_challenge_if_present", return_value=False),
+            patch("scripts.checkin.space_click_challenge_visible", return_value=True),
+        ):
+            with self.assertRaisesRegex(Exception, "点选验证码处理次数已达上限"):
+                wait_for_checkin_action_response(page, [], attempt=1, timeout_ms=1_000)
 
     def test_extract_action_fields_ignores_unrelated_page_success_fields(self) -> None:
         text = json.dumps(
@@ -544,6 +651,18 @@ class CheckinRetryTest(unittest.TestCase):
         self.assertTrue(click_menu_entry(page, "积分记录"))
         page.evaluate.assert_called_once()
 
+    def test_click_menu_entry_waits_for_late_rendered_dom_text(self) -> None:
+        page = Mock()
+        hidden_locator = Mock()
+        hidden_locator.count.return_value = 0
+        page.get_by_role.return_value = hidden_locator
+        page.get_by_text.return_value = hidden_locator
+        page.evaluate.side_effect = [False, True]
+
+        self.assertTrue(click_menu_entry(page, "积分记录", timeout_ms=1_000))
+        self.assertEqual(page.evaluate.call_count, 2)
+        page.wait_for_timeout.assert_called_once_with(300)
+
     def test_telegram_message_distinguishes_result_source(self) -> None:
         from_response = CheckinResult(
             username="a@example.com",
@@ -586,6 +705,7 @@ class CheckinRetryTest(unittest.TestCase):
         with (
             patch("scripts.checkin.open_user_menu", return_value=True),
             patch("scripts.checkin.click_menu_entry", return_value=True),
+            patch("scripts.checkin.SIGN_CLICK_DELAY_SECONDS", 1.25),
             patch("scripts.checkin.wait_for_checkin_action_response", return_value=response),
             patch("scripts.checkin.select_action_response", return_value=(response, body_result, False, "签到失败", "你已经签到过了，明天再来吧")),
             patch("scripts.checkin.confirm_checkin_from_points_records", return_value="签到成功，获得 16 积分"),
@@ -596,6 +716,7 @@ class CheckinRetryTest(unittest.TestCase):
         self.assertTrue(result.response_success)
         self.assertEqual(result.description, "签到成功，获得 16 积分")
         self.assertEqual(result.result_source, "points_record")
+        page.wait_for_timeout.assert_any_call(1_250)
 
     def test_perform_checkin_retries_when_already_signed_cannot_be_confirmed(self) -> None:
         account = AccountConfig(username="user@example.com", password="secret", sign_type="gamble")

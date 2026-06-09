@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import base64
 import json
 import os
 import re
@@ -8,7 +9,7 @@ import signal
 import sys
 import time
 from contextlib import contextmanager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from pathlib import Path
 from types import FrameType
@@ -120,7 +121,23 @@ YESCAPTCHA_POLL_INTERVAL_SECONDS = float(
 )
 YESCAPTCHA_SPACE_MAX_SOLVES = max(
     1,
-    int(get_config_value("YESCAPTCHA_SPACE_MAX_SOLVES", "2", "yescaptcha_space_max_solves")),
+    int(get_config_value("YESCAPTCHA_SPACE_MAX_SOLVES", "3", "yescaptcha_space_max_solves")),
+)
+MENU_SETTLE_SECONDS = max(
+    0,
+    float(get_config_value("HDHIVE_MENU_SETTLE_SECONDS", "1.5", "menu_settle_seconds")),
+)
+SIGN_CLICK_DELAY_SECONDS = max(
+    0,
+    float(get_config_value("HDHIVE_SIGN_CLICK_DELAY_SECONDS", "1.5", "sign_click_delay_seconds")),
+)
+SPACE_CHALLENGE_SETTLE_SECONDS = max(
+    0,
+    float(get_config_value("HDHIVE_SPACE_CHALLENGE_SETTLE_SECONDS", "1.5", "space_challenge_settle_seconds")),
+)
+SPACE_CLICK_DELAY_SECONDS = max(
+    0,
+    float(get_config_value("HDHIVE_SPACE_CLICK_DELAY_SECONDS", "0.8", "space_click_delay_seconds")),
 )
 
 SIGN_TYPE_TO_LABEL = {
@@ -416,7 +433,61 @@ SPACE_CLICK_CHALLENGE_SCRIPT = """() => {
     displayHeight: imageRect.height,
     imageOffsetX: imageRect.left - stageRect.left,
     imageOffsetY: imageRect.top - stageRect.top,
+    imageViewportX: imageRect.left,
+    imageViewportY: imageRect.top,
   };
+}"""
+
+SPACE_CLICK_REFRESH_EXPIRED_SCRIPT = """() => {
+  const root = Array.from(document.querySelectorAll('[class*="SpaceClickCaptcha_container"]'))
+    .find((element) => {
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return style.visibility !== 'hidden' && style.display !== 'none' && rect.width > 0 && rect.height > 0;
+    });
+  if (!root) return false;
+
+  const text = root.textContent || '';
+  if (!/(验证码无效|过期|点击位置不正确|请重试|invalid|expired|incorrect|retry)/i.test(text)) return false;
+
+  const rootRect = root.getBoundingClientRect();
+  const visibleButtons = Array.from(root.querySelectorAll('button, [role="button"]'))
+    .map((element) => {
+      const style = window.getComputedStyle(element);
+      const rect = element.getBoundingClientRect();
+      return { element, rect, style };
+    })
+    .filter(({ rect, style }) => (
+      style.visibility !== 'hidden' &&
+      style.display !== 'none' &&
+      rect.width > 0 &&
+      rect.height > 0
+    ));
+
+  let target = visibleButtons.find(({ element }) => {
+    const label = [
+      element.getAttribute('aria-label') || '',
+      element.getAttribute('title') || '',
+      element.textContent || '',
+    ].join(' ');
+    return /(刷新|重试|refresh|reload|retry)/i.test(label);
+  });
+
+  if (!target) {
+    const bottomButtons = visibleButtons
+      .filter(({ rect }) => rect.top > rootRect.top + rootRect.height * 0.72)
+      .sort((left, right) => left.rect.left - right.rect.left);
+    target =
+      bottomButtons.find(({ rect }) => (
+        rect.left > rootRect.left + rootRect.width * 0.62 &&
+        rect.left < rootRect.left + rootRect.width * 0.86
+      )) ||
+      bottomButtons[Math.max(0, bottomButtons.length - 2)];
+  }
+
+  if (!target) return false;
+  target.element.click();
+  return true;
 }"""
 
 # 浏览器诊断脚本：提取当前页面的指纹信息，用于排错
@@ -522,6 +593,8 @@ class SpaceClickChallenge:
     display_height: float
     image_offset_x: float = 0
     image_offset_y: float = 0
+    image_viewport_x: float = -1
+    image_viewport_y: float = -1
 
 
 @dataclass
@@ -791,14 +864,78 @@ def request_yescaptcha_turnstile_token(client_key: str, website_url: str, websit
     return poll_yescaptcha_task(client_key, task_id)
 
 
+def translate_space_click_descriptor(text: str) -> str:
+    """Translate HDHive's limited shape/color descriptors into hCaptcha-style English."""
+    value = compact(str(text)).rstrip("。,.，")
+    replacements = [
+        ("大尺寸", "large "),
+        ("大号", "large "),
+        ("大型", "large "),
+        ("小尺寸", "small "),
+        ("小号", "small "),
+        ("小型", "small "),
+        ("红色", "red "),
+        ("蓝色", "blue "),
+        ("绿色", "green "),
+        ("黄色", "yellow "),
+        ("灰色", "gray "),
+        ("黑色", "black "),
+        ("白色", "white "),
+        ("圆柱体", "cylinder"),
+        ("圆柱", "cylinder"),
+        ("正方体", "cube"),
+        ("立方体", "cube"),
+        ("方块", "cube"),
+        ("圆锥体", "cone"),
+        ("圆锥", "cone"),
+        ("球体", "sphere"),
+        ("球", "sphere"),
+        ("多面体", "polyhedron"),
+        ("物体", "object"),
+        ("物品", "object"),
+    ]
+    for source, target in replacements:
+        value = value.replace(source, target)
+    return re.sub(r"\s+", " ", value).strip() or str(text)
+
+
+def normalize_space_click_prompt(prompt: str) -> str:
+    """Normalize HDHive Chinese point-click prompts into English questions for YesCaptcha."""
+    text = compact(str(prompt)).rstrip("。")
+    patterns = [
+        (r"^请点击在(.+?)后面的(.+)$", "Click the {target} behind the {anchor}."),
+        (r"^请点击在(.+?)前面的(.+)$", "Click the {target} in front of the {anchor}."),
+        (r"^请点击在(.+?)右方的?(.+)$", "Click the {target} to the right of the {anchor}."),
+        (r"^请点击在(.+?)左方的?(.+)$", "Click the {target} to the left of the {anchor}."),
+        (r"^请点击与(.+?)有相同大小的(.+)$", "Click the {target} with the same size as the {anchor}."),
+        (r"^请点击与(.+?)有相同颜色的(.+)$", "Click the {target} with the same color as the {anchor}."),
+        (r"^请点击与(.+?)有相同形状的(.+)$", "Click the {target} with the same shape as the {anchor}."),
+    ]
+    for pattern, template in patterns:
+        match = re.match(pattern, text)
+        if match:
+            anchor = translate_space_click_descriptor(match.group(1))
+            target = translate_space_click_descriptor(match.group(2))
+            return template.format(anchor=anchor, target=target)
+
+    click_match = re.match(r"^请点击(.+)$", text)
+    if click_match:
+        return f"Click the {translate_space_click_descriptor(click_match.group(1))}."
+
+    return str(prompt)
+
+
 def create_yescaptcha_space_click_task(client_key: str, challenge: SpaceClickChallenge) -> dict[str, Any]:
     """Create a YesCaptcha image-coordinate recognition task for HDHive's space-click modal."""
+    question = normalize_space_click_prompt(challenge.prompt)
+    if question != challenge.prompt:
+        log(f"YesCaptcha 点选问题已归一化: {question}")
     payload = {
         "clientKey": client_key,
         "task": {
             "type": YESCAPTCHA_SPACE_TASK_TYPE,
             "queries": [challenge.image_base64],
-            "question": challenge.prompt,
+            "question": question,
         },
     }
     result = post_yescaptcha_json("createTask", payload)
@@ -977,6 +1114,8 @@ def extract_space_click_challenge(page: Page) -> Optional[SpaceClickChallenge]:
         display_height = float(data.get("displayHeight") or 0)
         image_offset_x = float(data.get("imageOffsetX") or 0)
         image_offset_y = float(data.get("imageOffsetY") or 0)
+        image_viewport_x = float(data.get("imageViewportX") if data.get("imageViewportX") is not None else -1)
+        image_viewport_y = float(data.get("imageViewportY") if data.get("imageViewportY") is not None else -1)
     except (TypeError, ValueError):
         return None
 
@@ -992,38 +1131,131 @@ def extract_space_click_challenge(page: Page) -> Optional[SpaceClickChallenge]:
         display_height=display_height,
         image_offset_x=image_offset_x,
         image_offset_y=image_offset_y,
+        image_viewport_x=image_viewport_x,
+        image_viewport_y=image_viewport_y,
+    )
+
+
+def space_click_needs_retry_message(text: str) -> bool:
+    """Return True when the captcha modal is asking for a fresh retry."""
+    return bool(re.search(r"验证码无效|过期|点击位置不正确|请重试|invalid|expired|incorrect|retry", str(text), re.I))
+
+
+def space_click_challenge_visible(page: Page) -> bool:
+    """Return True when a space-click challenge modal is still visible."""
+    return extract_space_click_challenge(page) is not None
+
+
+def milliseconds(seconds: float) -> int:
+    """Convert a second value to a Playwright timeout in milliseconds."""
+    return max(0, int(seconds * 1000))
+
+
+def capture_space_click_challenge_display_image(page: Page, challenge: SpaceClickChallenge) -> SpaceClickChallenge:
+    """Replace the challenge image with a JPEG screenshot of the actually rendered captcha image."""
+    if challenge.image_viewport_x < 0 or challenge.image_viewport_y < 0:
+        return challenge
+
+    clip = {
+        "x": int(round(challenge.image_viewport_x)),
+        "y": int(round(challenge.image_viewport_y)),
+        "width": int(round(challenge.display_width)),
+        "height": int(round(challenge.display_height)),
+    }
+    if clip["width"] <= 0 or clip["height"] <= 0:
+        return challenge
+
+    try:
+        screenshot = page.screenshot(type="jpeg", quality=92, scale="css", clip=clip)
+    except Exception as exc:
+        log(f"截取验证码显示图片失败，继续使用页面原图: {type(exc).__name__}: {exc}")
+        return challenge
+
+    encoded = base64.b64encode(screenshot).decode("ascii")
+    log(
+        "已截取验证码显示图片用于识别: "
+        f"clip=({clip['x']},{clip['y']},{clip['width']}x{clip['height']})"
+    )
+    return replace(
+        challenge,
+        image_base64=encoded,
+        image_width=float(clip["width"]),
+        image_height=float(clip["height"]),
+        display_width=float(clip["width"]),
+        display_height=float(clip["height"]),
+    )
+
+
+def refresh_expired_space_click_challenge(page: Page) -> bool:
+    """Refresh the HDHive point-click captcha after the page marks it invalid or expired."""
+    try:
+        body_text = page.locator("body").inner_text(timeout=1_000)
+        if isinstance(body_text, str) and not space_click_needs_retry_message(body_text):
+            return False
+    except Exception:
+        pass
+
+    try:
+        refreshed = bool(page.evaluate(SPACE_CLICK_REFRESH_EXPIRED_SCRIPT))
+    except Exception:
+        return False
+
+    if refreshed:
+        log("检测到点选验证码失败提示，已点击刷新按钮...")
+        page.wait_for_timeout(1_500)
+    return refreshed
+
+
+def clear_notice_before_captcha_action(page: Page, *, wait_for_appearance_ms: int = 12_000) -> None:
+    """Close announcement modals that can appear above the captcha before recognition/clicking."""
+    dismissed = dismiss_notice(page, wait_for_appearance_ms=wait_for_appearance_ms)
+    if dismissed:
+        # The site can stack a delayed announcement above an already-open captcha.
+        # Do one short stability pass so the coordinate click is not sent into the overlay.
+        dismiss_notice(page, wait_for_appearance_ms=1_000)
+
+
+def space_click_display_position(
+    challenge: SpaceClickChallenge,
+    point: CaptchaClickPoint,
+) -> tuple[float, float]:
+    """Map YesCaptcha image-relative coordinates to the rendered captcha stage."""
+    scale_x = challenge.display_width / challenge.image_width
+    scale_y = challenge.display_height / challenge.image_height
+    return (
+        challenge.image_offset_x + point.x * scale_x,
+        challenge.image_offset_y + point.y * scale_y,
     )
 
 
 def click_space_captcha_points(page: Page, challenge: SpaceClickChallenge, points: list[CaptchaClickPoint]) -> None:
     """Click solver-returned image coordinates inside the HDHive space-click captcha stage."""
-    dismiss_notice(page, wait_for_appearance_ms=2_000)
+    clear_notice_before_captcha_action(page)
     stage = page.locator('[class*="SpaceClickCaptcha_stage"], [role="button"][aria-label*="请点击"]').first
     stage.wait_for(timeout=5_000)
 
-    scale_x = challenge.display_width / challenge.image_width
-    scale_y = challenge.display_height / challenge.image_height
     for index, point in enumerate(points, start=1):
-        if 0 <= point.x <= challenge.display_width and 0 <= point.y <= challenge.display_height:
-            click_x = challenge.image_offset_x + point.x
-            click_y = challenge.image_offset_y + point.y
-        else:
-            click_x = challenge.image_offset_x + point.x * scale_x
-            click_y = challenge.image_offset_y + point.y * scale_y
+        clear_notice_before_captcha_action(page, wait_for_appearance_ms=3_000)
+        click_x, click_y = space_click_display_position(challenge, point)
         log(
             f"点击点选验证码坐标 {index}/{len(points)}: "
             f"image=({point.x:.1f},{point.y:.1f}) display=({click_x:.1f},{click_y:.1f})"
         )
         stage.click(position={"x": click_x, "y": click_y}, force=True, timeout=5_000)
-        page.wait_for_timeout(500)
+        page.wait_for_timeout(milliseconds(SPACE_CLICK_DELAY_SECONDS))
 
 
 def solve_space_click_challenge_if_present(page: Page, attempt: int) -> bool:
     """Solve HDHive's space-click image captcha through YesCaptcha when it is visible."""
-    dismiss_notice(page, wait_for_appearance_ms=2_000)
+    clear_notice_before_captcha_action(page)
+    refresh_expired_space_click_challenge(page)
     challenge = extract_space_click_challenge(page)
     if challenge is None:
         return False
+    if SPACE_CHALLENGE_SETTLE_SECONDS > 0:
+        page.wait_for_timeout(milliseconds(SPACE_CHALLENGE_SETTLE_SECONDS))
+        challenge = extract_space_click_challenge(page) or challenge
+    challenge = capture_space_click_challenge_display_image(page, challenge)
     if not YESCAPTCHA_CLIENT_KEY:
         raise CheckinError(
             "检测到 HDHive 点选验证码，但未配置 YESCAPTCHA_CLIENT_KEY "
@@ -1115,6 +1347,8 @@ def open_user_menu(page: Page, *, timeout_ms: int = 5_000, quiet: bool = False) 
     try:
         page.locator('button[aria-label="用户菜单"]').click(force=True, timeout=timeout_ms)
         page.get_by_text("个人中心", exact=True).first.wait_for(timeout=timeout_ms)
+        if MENU_SETTLE_SECONDS > 0:
+            page.wait_for_timeout(milliseconds(MENU_SETTLE_SECONDS))
         return True
     except Exception:
         return False
@@ -1139,40 +1373,46 @@ def click_first_visible(locator, *, timeout_ms: int = 2_000) -> bool:
 
 
 def click_menu_entry(page: Page, label: str, *, timeout_ms: int = 5_000) -> bool:
-    """Click a visible menu entry using exact label matches before falling back to broad text matches."""
-    candidates = [
-        page.get_by_role("menuitem", name=label),
-        page.get_by_role("link", name=label),
-        page.get_by_role("button", name=label),
-        page.get_by_text(label, exact=True),
-        page.get_by_text(label, exact=False),
-    ]
-    for locator in candidates:
-        if click_first_visible(locator, timeout_ms=timeout_ms):
-            return True
-    try:
-        return bool(
-            page.evaluate(
-                """(label) => {
-                  const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
-                  const elements = Array.from(document.querySelectorAll('a, button, [role="button"], [role="menuitem"], div, span, p'));
-                  const target = elements.find((element) => {
-                    const style = window.getComputedStyle(element);
-                    if (style.visibility === 'hidden' || style.display === 'none') return false;
-                    const rect = element.getBoundingClientRect();
-                    if (rect.width <= 0 || rect.height <= 0) return false;
-                    return normalize(element.textContent) === label;
-                  });
-                  if (!target) return false;
-                  const clickable = target.closest('a, button, [role="button"], [role="menuitem"]') || target;
-                  clickable.click();
-                  return true;
-                }""",
-                label,
-            )
-        )
-    except Exception:
-        return False
+    """Click a visible menu entry, waiting for late-rendered menu content within timeout_ms."""
+    poll_ms = 300
+    max_attempts = max(1, int(timeout_ms / poll_ms) + 1)
+    for retry_index in range(max_attempts):
+        candidates = [
+            page.get_by_role("menuitem", name=label),
+            page.get_by_role("link", name=label),
+            page.get_by_role("button", name=label),
+            page.get_by_text(label, exact=True),
+            page.get_by_text(label, exact=False),
+        ]
+        for locator in candidates:
+            if click_first_visible(locator, timeout_ms=min(timeout_ms, 2_000)):
+                return True
+        try:
+            if bool(
+                page.evaluate(
+                    """(label) => {
+                      const normalize = (value) => (value || '').replace(/\\s+/g, ' ').trim();
+                      const elements = Array.from(document.querySelectorAll('a, button, [role="button"], [role="menuitem"], div, span, p'));
+                      const target = elements.find((element) => {
+                        const style = window.getComputedStyle(element);
+                        if (style.visibility === 'hidden' || style.display === 'none') return false;
+                        const rect = element.getBoundingClientRect();
+                        if (rect.width <= 0 || rect.height <= 0) return false;
+                        return normalize(element.textContent) === label;
+                      });
+                      if (!target) return false;
+                      const clickable = target.closest('a, button, [role="button"], [role="menuitem"]') || target;
+                      clickable.click();
+                      return true;
+                    }""",
+                    label,
+                )
+            ):
+                return True
+        except Exception:
+            pass
+        if retry_index < max_attempts - 1:
+            page.wait_for_timeout(poll_ms)
     return False
 
 
@@ -1607,6 +1847,11 @@ def wait_for_checkin_action_response(
             if solve_space_click_challenge_if_present(page, attempt):
                 space_click_solves += 1
                 continue
+        elif space_click_challenge_visible(page):
+            raise CheckinError(
+                f"点选验证码处理次数已达上限 ({YESCAPTCHA_SPACE_MAX_SOLVES})，"
+                "页面仍停留在验证弹窗。"
+            )
 
         if not turnstile_solved:
             turnstile_solved = solve_turnstile_challenge_if_present(page, attempt)
@@ -1651,6 +1896,11 @@ def wait_for_challenge_followup_responses(
                 if solve_space_click_challenge_if_present(page, attempt):
                     space_click_solves += 1
                     continue
+            elif space_click_challenge_visible(page):
+                raise CheckinError(
+                    f"点选验证码处理次数已达上限 ({YESCAPTCHA_SPACE_MAX_SOLVES})，"
+                    "页面仍停留在验证弹窗。"
+                )
 
             if not turnstile_solved:
                 turnstile_solved = solve_turnstile_challenge_if_present(page, attempt)
@@ -1759,6 +2009,12 @@ def perform_checkin(page: Page, account: AccountConfig, attempt: int = 1) -> Che
     page.on("response", collect_response)
     try:
         log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 等待签到 Server Action 响应...")
+        if SIGN_CLICK_DELAY_SECONDS > 0:
+            log(
+                f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 菜单已打开，"
+                f"等待 {SIGN_CLICK_DELAY_SECONDS:.1f}s 后点击 {sign_label}..."
+            )
+            page.wait_for_timeout(milliseconds(SIGN_CLICK_DELAY_SECONDS))
         if not click_menu_entry(page, sign_label, timeout_ms=10_000):
             dismiss_notice(page, wait_for_appearance_ms=3_000)
             if not open_user_menu(page, timeout_ms=10_000) or not click_menu_entry(page, sign_label, timeout_ms=10_000):

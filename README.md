@@ -113,13 +113,17 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 - `HDHIVE_HEADLESS`：默认 `true`
 - `HDHIVE_TIMEZONE`：默认 `Asia/Shanghai`
 - `HDHIVE_MAX_ATTEMPTS`：每个账号最大尝试次数，默认 `3`
+- `HDHIVE_MENU_SETTLE_SECONDS`：打开用户菜单后等待菜单稳定的秒数，默认 `1.5`
+- `HDHIVE_SIGN_CLICK_DELAY_SECONDS`：用户菜单打开后点击签到项前的等待秒数，默认 `1.5`
 - `HDHIVE_RETRY_BASE_DELAY_SECONDS`：重试基础等待秒数，默认 `5`，按尝试次数线性递增
 - `HDHIVE_RESPONSE_BODY_TIMEOUT_SECONDS`：读取签到接口响应 body 的最长等待秒数，默认 `15`
 - `YESCAPTCHA_CLIENT_KEY`：YesCaptcha 客户端密钥；点击签到后触发 Turnstile 或站内点选验证时必填
 - `YESCAPTCHA_API_BASE_URL`：YesCaptcha API 节点，默认 `https://api.yescaptcha.com`
 - `YESCAPTCHA_TASK_TYPE`：Cloudflare Turnstile 任务类型，默认 `TurnstileTaskProxyless`
 - `YESCAPTCHA_SPACE_TASK_TYPE`：HDHive 站内点选验证码识别任务类型，默认 `HCaptchaClassification`
-- `YESCAPTCHA_SPACE_MAX_SOLVES`：单次签到尝试内最多处理几轮站内点选验证码，默认 `2`
+- `YESCAPTCHA_SPACE_MAX_SOLVES`：单次签到尝试内最多处理几轮站内点选验证码，默认 `3`
+- `HDHIVE_SPACE_CHALLENGE_SETTLE_SECONDS`：点选验证码弹出后等待图片和提示稳定的秒数，默认 `1.5`
+- `HDHIVE_SPACE_CLICK_DELAY_SECONDS`：点选验证码多坐标点击之间的间隔秒数，默认 `0.8`
 - `YESCAPTCHA_RESULT_TIMEOUT_SECONDS`：等待 YesCaptcha 识别结果的最长秒数，默认 `120`
 - `YESCAPTCHA_POLL_INTERVAL_SECONDS`：轮询 YesCaptcha 结果的间隔秒数，默认 `3`
 - `TELEGRAM_BOT_TOKEN`：Telegram Bot Token
