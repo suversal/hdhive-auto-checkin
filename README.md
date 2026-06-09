@@ -1,12 +1,13 @@
 <div align="center">
   <h1>🚨 HDHive 自动签到 🚨</h1>
   <p><b>基于 `Python + Playwright` 编写的 HDHive 自动化签到工具</b></p>
-  <p><b>当前定位：使用Playwright模拟真实浏览器完成网页登录、签到和积分记录核验。</b></p>
-  <p><b>⚠️ 重要提醒：由于 HDHive 官网已接入 Cloudflare 验证，在触发CF验证时，当前 Playwright 网页签到方案可能无法正常签到。</b></p>
-  <p><b>如果你需要稳定自动签到，推荐切换到 <code>telethon</code> 分支，使用 Telegram 机器人签到方案。</b></p>
-  <p><b>如果想同时启动两个方案，可以使用 action 分支统一调度。</b></p>
-    <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/telethon">当前推荐的稳定方案：telethon分支 （Telegram 机器人签到）</a> 👈</h3>
-    <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/main">网页端签到方案地址：main分支 (Playwright方案，暂时不支持通过cf验证)</a> 👈</h3>
+  <p><b>当前定位：通过真实浏览器完成网页登录、签到操作和积分记录核验。</b></p>
+  <p><b>适用场景：站点未触发额外验证时，保留最直接的网页端签到流程。</b></p>
+  <p><b>⚠️ 边界说明：当前 <code>main</code> 分支不接入验证码服务；如果触发 Cloudflare 或站内点选验证，可能无法完成签到。</b></p>
+  <p><b>如果需要网页验证码处理，请使用 <code>feature_yescaptcha</code> 分支；如果需要 Telegram 机器人签到，请使用 <code>telethon</code> 分支。</b></p>
+  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/action">统一调度分支：action</a> 👈</h3>
+  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/telethon">Telegram 机器人签到分支：telethon</a> 👈</h3>
+  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/feature_yescaptcha">网页验证码处理分支：feature_yescaptcha</a> 👈</h3>
   <br/>
 </div>
 
