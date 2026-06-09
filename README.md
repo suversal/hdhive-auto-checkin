@@ -121,6 +121,7 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 - `YESCAPTCHA_API_BASE_URL`：YesCaptcha API 节点，默认 `https://api.yescaptcha.com`
 - `YESCAPTCHA_TASK_TYPE`：Cloudflare Turnstile 任务类型，默认 `TurnstileTaskProxyless`
 - `YESCAPTCHA_SPACE_TASK_TYPE`：HDHive 站内点选验证码识别任务类型，默认 `HCaptchaClassification`
+- `YESCAPTCHA_SPACE_IMAGE_SOURCE`：提交给 YesCaptcha 的点选验证码图片来源，默认 `original`，可选 `screenshot`
 - `YESCAPTCHA_SPACE_MAX_SOLVES`：单次签到尝试内最多处理几轮站内点选验证码，默认 `3`
 - `HDHIVE_SPACE_CHALLENGE_SETTLE_SECONDS`：点选验证码弹出后等待图片和提示稳定的秒数，默认 `1.5`
 - `HDHIVE_SPACE_CLICK_DELAY_SECONDS`：点选验证码多坐标点击之间的间隔秒数，默认 `0.8`

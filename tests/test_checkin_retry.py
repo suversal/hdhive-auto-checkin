@@ -22,7 +22,6 @@ from scripts.checkin import (
     perform_checkin,
     request_yescaptcha_space_click_points,
     request_yescaptcha_turnstile_token,
-    normalize_space_click_prompt,
     refresh_expired_space_click_challenge,
     run_account_with_retries,
     should_retry_result,
@@ -134,29 +133,7 @@ class CheckinRetryTest(unittest.TestCase):
         self.assertEqual(payload["clientKey"], "client-key")
         self.assertEqual(payload["task"]["type"], "HCaptchaClassification")
         self.assertEqual(payload["task"]["queries"], ["base64-image"])
-        self.assertEqual(payload["task"]["question"], "Click the large yellow object.")
-
-    def test_normalize_space_click_prompt_translates_spatial_relation(self) -> None:
-        self.assertEqual(
-            normalize_space_click_prompt("请点击在灰色多面体后面的立方体。"),
-            "Click the cube behind the gray polyhedron.",
-        )
-        self.assertEqual(
-            normalize_space_click_prompt("请点击与绿色圆柱体有相同大小的圆锥。"),
-            "Click the cone with the same size as the green cylinder.",
-        )
-        self.assertEqual(
-            normalize_space_click_prompt("请点击在小型正方体后面的物品。"),
-            "Click the object behind the small cube.",
-        )
-        self.assertEqual(
-            normalize_space_click_prompt("请点击与蓝色物体有相同形状的物体。"),
-            "Click the object with the same shape as the blue object.",
-        )
-        self.assertEqual(
-            normalize_space_click_prompt("请点击大尺寸灰色物体。"),
-            "Click the large gray object.",
-        )
+        self.assertEqual(payload["task"]["question"], "请点击大型黄色物品。")
 
     def test_request_yescaptcha_turnstile_token_polls_until_ready(self) -> None:
         responses = [

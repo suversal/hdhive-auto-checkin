@@ -110,6 +110,9 @@ YESCAPTCHA_TASK_TYPE = get_config_value(
 YESCAPTCHA_SPACE_TASK_TYPE = get_config_value(
     "YESCAPTCHA_SPACE_TASK_TYPE", "HCaptchaClassification", "yescaptcha_space_task_type"
 ) or "HCaptchaClassification"
+YESCAPTCHA_SPACE_IMAGE_SOURCE = (
+    get_config_value("YESCAPTCHA_SPACE_IMAGE_SOURCE", "original", "yescaptcha_space_image_source") or "original"
+).lower()
 YESCAPTCHA_HTTP_TIMEOUT_SECONDS = float(
     get_config_value("YESCAPTCHA_HTTP_TIMEOUT_SECONDS", "30", "yescaptcha_http_timeout_seconds")
 )
@@ -864,78 +867,14 @@ def request_yescaptcha_turnstile_token(client_key: str, website_url: str, websit
     return poll_yescaptcha_task(client_key, task_id)
 
 
-def translate_space_click_descriptor(text: str) -> str:
-    """Translate HDHive's limited shape/color descriptors into hCaptcha-style English."""
-    value = compact(str(text)).rstrip("。,.，")
-    replacements = [
-        ("大尺寸", "large "),
-        ("大号", "large "),
-        ("大型", "large "),
-        ("小尺寸", "small "),
-        ("小号", "small "),
-        ("小型", "small "),
-        ("红色", "red "),
-        ("蓝色", "blue "),
-        ("绿色", "green "),
-        ("黄色", "yellow "),
-        ("灰色", "gray "),
-        ("黑色", "black "),
-        ("白色", "white "),
-        ("圆柱体", "cylinder"),
-        ("圆柱", "cylinder"),
-        ("正方体", "cube"),
-        ("立方体", "cube"),
-        ("方块", "cube"),
-        ("圆锥体", "cone"),
-        ("圆锥", "cone"),
-        ("球体", "sphere"),
-        ("球", "sphere"),
-        ("多面体", "polyhedron"),
-        ("物体", "object"),
-        ("物品", "object"),
-    ]
-    for source, target in replacements:
-        value = value.replace(source, target)
-    return re.sub(r"\s+", " ", value).strip() or str(text)
-
-
-def normalize_space_click_prompt(prompt: str) -> str:
-    """Normalize HDHive Chinese point-click prompts into English questions for YesCaptcha."""
-    text = compact(str(prompt)).rstrip("。")
-    patterns = [
-        (r"^请点击在(.+?)后面的(.+)$", "Click the {target} behind the {anchor}."),
-        (r"^请点击在(.+?)前面的(.+)$", "Click the {target} in front of the {anchor}."),
-        (r"^请点击在(.+?)右方的?(.+)$", "Click the {target} to the right of the {anchor}."),
-        (r"^请点击在(.+?)左方的?(.+)$", "Click the {target} to the left of the {anchor}."),
-        (r"^请点击与(.+?)有相同大小的(.+)$", "Click the {target} with the same size as the {anchor}."),
-        (r"^请点击与(.+?)有相同颜色的(.+)$", "Click the {target} with the same color as the {anchor}."),
-        (r"^请点击与(.+?)有相同形状的(.+)$", "Click the {target} with the same shape as the {anchor}."),
-    ]
-    for pattern, template in patterns:
-        match = re.match(pattern, text)
-        if match:
-            anchor = translate_space_click_descriptor(match.group(1))
-            target = translate_space_click_descriptor(match.group(2))
-            return template.format(anchor=anchor, target=target)
-
-    click_match = re.match(r"^请点击(.+)$", text)
-    if click_match:
-        return f"Click the {translate_space_click_descriptor(click_match.group(1))}."
-
-    return str(prompt)
-
-
 def create_yescaptcha_space_click_task(client_key: str, challenge: SpaceClickChallenge) -> dict[str, Any]:
     """Create a YesCaptcha image-coordinate recognition task for HDHive's space-click modal."""
-    question = normalize_space_click_prompt(challenge.prompt)
-    if question != challenge.prompt:
-        log(f"YesCaptcha 点选问题已归一化: {question}")
     payload = {
         "clientKey": client_key,
         "task": {
             "type": YESCAPTCHA_SPACE_TASK_TYPE,
             "queries": [challenge.image_base64],
-            "question": question,
+            "question": challenge.prompt,
         },
     }
     result = post_yescaptcha_json("createTask", payload)
@@ -1255,7 +1194,8 @@ def solve_space_click_challenge_if_present(page: Page, attempt: int) -> bool:
     if SPACE_CHALLENGE_SETTLE_SECONDS > 0:
         page.wait_for_timeout(milliseconds(SPACE_CHALLENGE_SETTLE_SECONDS))
         challenge = extract_space_click_challenge(page) or challenge
-    challenge = capture_space_click_challenge_display_image(page, challenge)
+    if YESCAPTCHA_SPACE_IMAGE_SOURCE == "screenshot":
+        challenge = capture_space_click_challenge_display_image(page, challenge)
     if not YESCAPTCHA_CLIENT_KEY:
         raise CheckinError(
             "检测到 HDHive 点选验证码，但未配置 YESCAPTCHA_CLIENT_KEY "

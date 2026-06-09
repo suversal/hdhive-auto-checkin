@@ -12,6 +12,7 @@
   "yescaptcha_api_base_url": "https://api.yescaptcha.com",
   "yescaptcha_task_type": "TurnstileTaskProxyless",
   "yescaptcha_space_task_type": "HCaptchaClassification",
+  "yescaptcha_space_image_source": "original",
   "yescaptcha_space_max_solves": "3",
   "space_challenge_settle_seconds": "1.5",
   "space_click_delay_seconds": "0.8",
