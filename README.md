@@ -47,6 +47,7 @@
 - Telegram API 的 `api_id` 和 `api_hash`。
 - 每个 Telegram 账号对应的 `TELEGRAM_SESSION`。
 - HDHive 机器人的 Telegram username，例如 `@HDHiveBot`。实际名称以你的机器人资料页为准。
+- 一个用于发送汇总通知的 Telegram Bot Token。如果不需要汇总通知，可以不配置。
 
 ## 获取 Telegram api_id 和 api_hash
 
@@ -136,8 +137,9 @@ cp local.config.example.json local.config.json
 {
   "telegram_api_id": "123456",
   "telegram_api_hash": "your-api-hash",
+  "telegram_bot_token": "your-telegram-bot-token",
   "telegram_response_timeout_seconds": "60",
-  "telegram_summary_notify_chat_id": "me",
+  "telegram_summary_notify_chat_id": "123456789",
   "hdhive_telegram_accounts_json": [
     {
       "name": "account-1",
@@ -156,8 +158,9 @@ cp local.config.example.json local.config.json
 {
   "telegram_api_id": "123456",
   "telegram_api_hash": "your-api-hash",
+  "telegram_bot_token": "your-telegram-bot-token",
   "telegram_response_timeout_seconds": "60",
-  "telegram_summary_notify_chat_id": "me",
+  "telegram_summary_notify_chat_id": "123456789",
   "hdhive_telegram_accounts_json": [
     {
       "name": "account-1",
@@ -181,8 +184,9 @@ cp local.config.example.json local.config.json
 
 - `telegram_api_id`：你在 my.telegram.org 申请到的 `api_id`。
 - `telegram_api_hash`：你在 my.telegram.org 申请到的 `api_hash`。
+- `telegram_bot_token`：用于发送所有账号汇总通知的 Telegram Bot Token。
 - `telegram_response_timeout_seconds`：等待 HDHive 机器人回复的最长时间，默认 `60` 秒。
-- `telegram_summary_notify_chat_id`：主账号接收所有账号汇总通知的目标。
+- `telegram_summary_notify_chat_id`：接收所有账号汇总通知的目标，由 `telegram_bot_token` 对应的机器人发送。
 - `hdhive_telegram_accounts_json`：账号数组。一条就是一个账号，两条就是两个账号。
 - `name`：账号名称，只用于日志和通知展示，建议写容易识别的名字。
 - `session`：该 Telegram 账号生成的 `TELEGRAM_SESSION`。
@@ -209,25 +213,28 @@ cp local.config.example.json local.config.json
 配置在顶层：
 
 ```json
-"telegram_summary_notify_chat_id": "me"
+"telegram_bot_token": "your-telegram-bot-token",
+"telegram_summary_notify_chat_id": "123456789"
 ```
 
-含义：所有账号执行完后，发送一条汇总通知。
+含义：所有账号执行完后，由 Telegram Bot 发送一条汇总通知。
 
-注意：如果这里填 `me`，汇总通知会发到**第一个执行账号**的 Saved Messages，因为脚本使用第一个账号的 session 发送汇总。
+注意：汇总通知不再使用第一个登录账号发送，而是使用 `telegram_bot_token` 对应的机器人发送。接收方需要先和这个机器人发起过会话，否则 Telegram Bot API 可能拒绝发送。
 
-如果你想让固定主账号接收汇总，推荐填主账号的 Telegram username 或 chat id，例如：
+汇总通知目标推荐填写数字 chat id，或机器人可发送到的 `@username`、群组、频道，例如：
 
 ```json
 "telegram_summary_notify_chat_id": "@your_username"
 ```
 
-`notify_chat_id` 和 `telegram_summary_notify_chat_id` 支持：
+`notify_chat_id` 支持：
 
 - `""`：不发送对应通知。
 - `"me"`：发送到当前 session 对应账号的 Saved Messages。
 - `"@username"`：发送给指定 Telegram 用户。
 - 数字 chat id：发送到指定用户、群组或频道。
+
+`telegram_summary_notify_chat_id` 由 Bot API 使用，不支持 `"me"`；建议填写数字 chat id。
 
 ## 本地测试
 
@@ -289,11 +296,12 @@ Settings -> Secrets and variables -> Actions
 
 ### Secrets
 
-添加下面三个 Secrets：
+添加下面四个 Secrets：
 
 ```text
 TELEGRAM_API_ID
 TELEGRAM_API_HASH
+TELEGRAM_BOT_TOKEN
 HDHIVE_TELEGRAM_ACCOUNTS_JSON
 ```
 
@@ -305,11 +313,12 @@ HDHIVE_TELEGRAM_ACCOUNTS_JSON
 | --- | --- |
 | `telegram_api_id` | Secret: `TELEGRAM_API_ID` |
 | `telegram_api_hash` | Secret: `TELEGRAM_API_HASH` |
+| `telegram_bot_token` | Secret: `TELEGRAM_BOT_TOKEN` |
 | `hdhive_telegram_accounts_json` | Secret: `HDHIVE_TELEGRAM_ACCOUNTS_JSON` |
 | `telegram_response_timeout_seconds` | Variable: `TELEGRAM_RESPONSE_TIMEOUT_SECONDS` |
 | `telegram_summary_notify_chat_id` | Variable: `TELEGRAM_SUMMARY_NOTIFY_CHAT_ID` |
 
-`HDHIVE_TELEGRAM_ACCOUNTS_JSON` 只填账号数组。不要包含外层对象，也不要包含 `telegram_api_id`、`telegram_api_hash`、`telegram_response_timeout_seconds`、`telegram_summary_notify_chat_id`。
+`HDHIVE_TELEGRAM_ACCOUNTS_JSON` 只填账号数组。不要包含外层对象，也不要包含 `telegram_api_id`、`telegram_api_hash`、`telegram_bot_token`、`telegram_response_timeout_seconds`、`telegram_summary_notify_chat_id`。
 
 如果你的本地配置是：
 
@@ -317,8 +326,9 @@ HDHIVE_TELEGRAM_ACCOUNTS_JSON
 {
   "telegram_api_id": "123456",
   "telegram_api_hash": "your-api-hash",
+  "telegram_bot_token": "your-telegram-bot-token",
   "telegram_response_timeout_seconds": "60",
-  "telegram_summary_notify_chat_id": "me",
+  "telegram_summary_notify_chat_id": "123456789",
   "hdhive_telegram_accounts_json": [
     {
       "name": "account-1",
@@ -358,7 +368,7 @@ HDHIVE_TELEGRAM_ACCOUNTS_JSON
 
 ```text
 TELEGRAM_RESPONSE_TIMEOUT_SECONDS = 60
-TELEGRAM_SUMMARY_NOTIFY_CHAT_ID = me
+TELEGRAM_SUMMARY_NOTIFY_CHAT_ID = 123456789
 ```
 
 如果你不想发送汇总通知，可以不配置 `TELEGRAM_SUMMARY_NOTIFY_CHAT_ID`。
@@ -473,7 +483,7 @@ python -m json.tool local.config.json
 
 如果 `notify_chat_id` 填的是 `me`，每个账号的通知会发到该账号自己的 Saved Messages。
 
-如果 `telegram_summary_notify_chat_id` 填的是 `me`，汇总通知会发到第一个执行账号自己的 Saved Messages。
+汇总通知现在通过 `TELEGRAM_BOT_TOKEN` 对应的机器人发送。如果没有收到汇总通知，确认是否配置了 `TELEGRAM_BOT_TOKEN`，以及 `TELEGRAM_SUMMARY_NOTIFY_CHAT_ID` 是否是机器人可发送的 chat id。
 
 ## 安全说明
 

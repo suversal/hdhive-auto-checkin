@@ -2,6 +2,7 @@ import unittest
 from unittest.mock import AsyncMock, Mock
 from pathlib import Path
 from tempfile import TemporaryDirectory
+from urllib.parse import parse_qs
 
 from scripts.telegram_checkin import (
     build_markdown_summary,
@@ -11,8 +12,10 @@ from scripts.telegram_checkin import (
     TelegramRuntimeConfig,
     TelegramCheckinResult,
     load_account_configs_from_mapping,
+    load_telegram_bot_token_from_mapping,
     load_summary_notify_chat_id_from_mapping,
     resolve_notify_target,
+    send_run_summary_notification,
     send_summary_notification,
     parse_bot_reply,
     write_outputs,
@@ -125,6 +128,13 @@ class TelegramReplyParsingTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(load_summary_notify_chat_id_from_mapping(mapping), "main")
 
+    def test_load_telegram_bot_token_from_mapping(self) -> None:
+        mapping = {
+            "telegram_bot_token": "bot-token",
+        }
+
+        self.assertEqual(load_telegram_bot_token_from_mapping(mapping), "bot-token")
+
     def test_build_summary_notification_message_lists_all_accounts(self) -> None:
         results = [
             TelegramCheckinResult(
@@ -225,6 +235,45 @@ class TelegramReplyParsingTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary["total"], 2)
         self.assertEqual(summary["success"], 1)
         self.assertEqual(summary["unknown"], 1)
+
+    def test_send_run_summary_notification_uses_telegram_bot_api(self) -> None:
+        result = TelegramCheckinResult(
+            account_name="account-a",
+            command="赌狗签到",
+            status="success",
+            response_success=True,
+            message="签到成功",
+            description="签到成功，获得 1 积分",
+            points=1,
+        )
+        captured = {}
+
+        class FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+            def read(self):
+                return b'{"ok":true}'
+
+        def fake_urlopen(request, timeout):
+            captured["url"] = request.full_url
+            captured["timeout"] = timeout
+            captured["body"] = request.data.decode("utf-8")
+            return FakeResponse()
+
+        with unittest.mock.patch("scripts.telegram_checkin.urlopen", side_effect=fake_urlopen):
+            sent = send_run_summary_notification("bot-token", "123456", [result])
+
+        self.assertTrue(sent)
+        self.assertEqual(captured["url"], "https://api.telegram.org/botbot-token/sendMessage")
+        self.assertEqual(captured["timeout"], 30)
+        payload = parse_qs(captured["body"])
+        self.assertEqual(payload["chat_id"], ["123456"])
+        self.assertEqual(payload["parse_mode"], ["HTML"])
+        self.assertIn("account-a", payload["text"][0])
 
     def test_validate_api_credentials_rejects_empty_values(self) -> None:
         with self.assertRaisesRegex(RuntimeError, "API_ID"):

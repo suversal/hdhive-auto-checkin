@@ -1,8 +1,9 @@
 {
   "telegram_api_id": "123456",
   "telegram_api_hash": "your-api-hash",
+  "telegram_bot_token": "your-telegram-bot-token",
   "telegram_response_timeout_seconds": "60",
-  "telegram_summary_notify_chat_id": "me",
+  "telegram_summary_notify_chat_id": "123456789",
   "hdhive_telegram_accounts_json": [
     {
       "name": "account-1",

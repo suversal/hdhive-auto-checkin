@@ -12,6 +12,9 @@ from datetime import datetime
 from html import escape
 from pathlib import Path
 from typing import Any, Optional
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 try:
     from telethon import TelegramClient
@@ -247,6 +250,15 @@ def load_summary_notify_chat_id_from_mapping(mapping: dict[str, Any]) -> str:
     )
 
 
+def load_telegram_bot_token_from_mapping(mapping: dict[str, Any]) -> str:
+    return get_mapping_value(
+        mapping,
+        "TELEGRAM_BOT_TOKEN",
+        "",
+        "telegram_bot_token",
+    )
+
+
 def load_runtime_configs() -> list[TelegramRuntimeConfig]:
     env_mapping = {
         "TELEGRAM_API_ID": os.getenv("TELEGRAM_API_ID", ""),
@@ -266,6 +278,14 @@ def load_summary_notify_chat_id() -> str:
     }
     merged = {**env_mapping, **LOCAL_CONFIG}
     return load_summary_notify_chat_id_from_mapping(merged)
+
+
+def load_telegram_bot_token() -> str:
+    env_mapping = {
+        "TELEGRAM_BOT_TOKEN": os.getenv("TELEGRAM_BOT_TOKEN", ""),
+    }
+    merged = {**env_mapping, **LOCAL_CONFIG}
+    return load_telegram_bot_token_from_mapping(merged)
 
 
 async def run_telegram_checkin(config: TelegramRuntimeConfig) -> TelegramCheckinResult:
@@ -327,20 +347,42 @@ async def send_summary_notification(client: Any, notify_chat_id: str, result: Te
     return True
 
 
-async def send_run_summary_notification(config: TelegramRuntimeConfig, notify_chat_id: str, results: list[TelegramCheckinResult]) -> bool:
-    if TelegramClient is None or StringSession is None:
-        raise CheckinError("未安装 telethon，请先执行: python -m pip install -r requirements.txt")
+def send_run_summary_notification(bot_token: str, notify_chat_id: str, results: list[TelegramCheckinResult]) -> bool:
+    """Send the all-account summary through Telegram Bot API."""
+    token = bot_token.strip()
+    chat_id = notify_chat_id.strip()
+    if not token or not chat_id:
+        return False
 
-    client = TelegramClient(StringSession(config.session), config.api_id, config.api_hash)
-    async with client:
-        try:
-            target = await resolve_notify_target(client, notify_chat_id)
-            await client.send_message(target, build_summary_notification_message(results), parse_mode="html")
-        except Exception as exc:
-            log(f"汇总通知发送失败，签到结果不受影响: {exc}")
-            return False
+    payload = urlencode(
+        {
+            "chat_id": chat_id,
+            "text": build_summary_notification_message(results),
+            "parse_mode": "HTML",
+            "disable_web_page_preview": "true",
+        }
+    ).encode("utf-8")
+    request = Request(
+        f"https://api.telegram.org/bot{token}/sendMessage",
+        data=payload,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=30) as response:
+            response_body = response.read().decode("utf-8", errors="replace")
+            try:
+                parsed = json.loads(response_body)
+            except json.JSONDecodeError:
+                parsed = {}
+            if isinstance(parsed, dict) and parsed.get("ok") is False:
+                log(f"汇总通知发送失败，签到结果不受影响: {parsed}")
+                return False
+    except (HTTPError, URLError, TimeoutError, OSError) as exc:
+        log(f"汇总通知发送失败，签到结果不受影响: {exc}")
+        return False
 
-    log(f"已发送所有账号汇总通知到 Telegram Chat: {notify_chat_id}")
+    log(f"已通过 Telegram Bot 发送所有账号汇总通知到 Chat: {chat_id}")
     return True
 
 
@@ -447,6 +489,7 @@ async def async_main() -> int:
     try:
         configs = load_runtime_configs()
         summary_notify_chat_id = load_summary_notify_chat_id()
+        telegram_bot_token = load_telegram_bot_token()
         artifacts_dir = configs[0].artifacts_dir
         log(f"成功加载 {len(configs)} 个 Telegram 签到账号")
         for config in configs:
@@ -478,7 +521,10 @@ async def async_main() -> int:
                 log(f"[{config.name}] 签到执行异常: {exc}")
         write_outputs(results, artifacts_dir)
         if summary_notify_chat_id:
-            await send_run_summary_notification(configs[0], summary_notify_chat_id, results)
+            if telegram_bot_token:
+                send_run_summary_notification(telegram_bot_token, summary_notify_chat_id, results)
+            else:
+                log("已配置汇总通知目标，但未配置 TELEGRAM_BOT_TOKEN / telegram_bot_token，跳过汇总通知。")
     except CheckinError as exc:
         log(f"配置或执行错误: {exc}")
         return 1
