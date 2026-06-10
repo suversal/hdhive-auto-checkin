@@ -4,7 +4,7 @@
   <p><b>当前定位：推荐使用的 HDHive 自动签到方案，不访问 HDHive 网页，也不依赖 Playwright 点击签到按钮。</b></p>
   <p><b>工作方式：通过 Telegram 用户会话向已绑定 HDHive 账号的机器人发送 <code>赌狗签到</code>，再解析机器人回复生成结果通知。</b></p>
   <p><b>推荐原因：实测 YesCaptcha 网页图形点选验证通过率不稳定，Telegram 机器人路线可以绕开网页端验证码问题。</b></p>
-  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/main">telegram绑定签到（当V3版本 前推荐方案）：telethon分支 </a> 👈</h3>
+  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/main">telegram绑定签到（V3版本 前推荐方案）：telethon分支 </a> 👈</h3>
   <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/feature_yescaptcha">使用yescaptcha进行签到验证（V2版本 成功率较低 不推荐使用 可自行fork优化）：feature_yescaptcha分支</a> 👈</h3>
   <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/main">网页端签到分支（V1版本 无签到验证时使用 不再维护）：main分支</a> 👈</h3>
   <br/>
