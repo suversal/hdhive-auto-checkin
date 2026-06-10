@@ -19,6 +19,7 @@ from scripts.checkin import (
     extract_today_checkin_remark,
     get_config_value,
     is_captcha_required_response,
+    click_sign_menu_entry_with_notice_recovery,
     parse_yescaptcha_click_points,
     perform_checkin,
     request_yescaptcha_space_click_points,
@@ -297,6 +298,34 @@ class CheckinRetryTest(unittest.TestCase):
         self.assertEqual(dismiss_notice.call_count, 2)
         dismiss_notice.assert_any_call(page, wait_for_appearance_ms=12_000)
         dismiss_notice.assert_any_call(page, wait_for_appearance_ms=1_000)
+
+    def test_click_sign_menu_entry_reopens_menu_after_late_notice(self) -> None:
+        page = Mock()
+
+        with (
+            patch("scripts.checkin.dismiss_notice", side_effect=[True]),
+            patch("scripts.checkin.open_user_menu", return_value=True) as open_menu,
+            patch("scripts.checkin.click_menu_entry", return_value=True) as click_entry,
+        ):
+            clicked = click_sign_menu_entry_with_notice_recovery(page, "赌狗签到", attempt=1)
+
+        self.assertTrue(clicked)
+        open_menu.assert_called_once_with(page, timeout_ms=10_000)
+        click_entry.assert_called_once_with(page, "赌狗签到", timeout_ms=10_000)
+
+    def test_click_sign_menu_entry_retries_after_notice_blocks_first_click(self) -> None:
+        page = Mock()
+
+        with (
+            patch("scripts.checkin.dismiss_notice", side_effect=[False, True, False]),
+            patch("scripts.checkin.open_user_menu", return_value=True) as open_menu,
+            patch("scripts.checkin.click_menu_entry", side_effect=[False, True]) as click_entry,
+        ):
+            clicked = click_sign_menu_entry_with_notice_recovery(page, "赌狗签到", attempt=1)
+
+        self.assertTrue(clicked)
+        open_menu.assert_called_once_with(page, timeout_ms=10_000)
+        self.assertEqual(click_entry.call_count, 2)
 
     def test_wait_for_checkin_action_response_fails_fast_after_space_click_limit(self) -> None:
         page = Mock()

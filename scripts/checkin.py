@@ -1361,6 +1361,38 @@ def click_menu_entry(page: Page, label: str, *, timeout_ms: int = 5_000) -> bool
     return False
 
 
+def click_sign_menu_entry_with_notice_recovery(page: Page, sign_label: str, attempt: int) -> bool:
+    """Click the sign-in entry, reopening the menu if a late announcement covered it."""
+    for retry_index in range(2):
+        if dismiss_notice(page, wait_for_appearance_ms=0):
+            log(
+                f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] "
+                f"点击 {sign_label} 前发现公告已关闭，重新打开用户菜单..."
+            )
+            if not open_user_menu(page, timeout_ms=10_000):
+                continue
+
+        if click_menu_entry(page, sign_label, timeout_ms=10_000):
+            return True
+
+        dismissed = dismiss_notice(page, wait_for_appearance_ms=3_000)
+        if retry_index >= 1:
+            break
+
+        if dismissed:
+            log(
+                f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] "
+                f"公告关闭后重新打开用户菜单，重试点击 {sign_label}..."
+            )
+        else:
+            log(
+                f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] "
+                f"未能点击 {sign_label}，重新打开用户菜单后重试..."
+            )
+        open_user_menu(page, timeout_ms=10_000)
+    return False
+
+
 def extract_today_checkin_remark(body_text: str, target_date: Optional[str] = None) -> Optional[str]:
     """Parse the points-record page text and return today's check-in remark when present."""
     date_prefix = target_date or datetime.now().strftime("%Y-%m-%d")
@@ -1958,10 +1990,8 @@ def perform_checkin(page: Page, account: AccountConfig, attempt: int = 1) -> Che
                 f"等待 {SIGN_CLICK_DELAY_SECONDS:.1f}s 后点击 {sign_label}..."
             )
             page.wait_for_timeout(milliseconds(SIGN_CLICK_DELAY_SECONDS))
-        if not click_menu_entry(page, sign_label, timeout_ms=10_000):
-            dismiss_notice(page, wait_for_appearance_ms=3_000)
-            if not open_user_menu(page, timeout_ms=10_000) or not click_menu_entry(page, sign_label, timeout_ms=10_000):
-                raise CheckinError(f"在菜单中未找到或未能点击 '{sign_label}' 选项")
+        if not click_sign_menu_entry_with_notice_recovery(page, sign_label, attempt):
+            raise CheckinError(f"在菜单中未找到或未能点击 '{sign_label}' 选项")
         first_response = wait_for_checkin_action_response(page, action_responses, attempt)
         if first_response not in action_responses:
             action_responses.append(first_response)
