@@ -12,7 +12,7 @@ on:
       - "requirements.txt"
       - "local.config.example.json"
   schedule:
-    # 北京时间每天 06:23，UTC 为前一天 22:23
+    # 北京时间每天 05:23，UTC 为前一天 21:23
     - cron: "23 21 * * *"
 
 permissions:

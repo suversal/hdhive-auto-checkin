@@ -4,7 +4,7 @@
   <p><b>当前定位：推荐使用的 HDHive 自动签到方案，不访问 HDHive 网页，也不依赖 Playwright 点击签到按钮。</b></p>
   <p><b>工作方式：通过 Telegram 用户会话向已绑定 HDHive 账号的机器人发送 <code>赌狗签到</code>，再解析机器人回复生成结果通知。</b></p>
   <p><b>推荐原因：实测 YesCaptcha 网页图形点选验证通过率不稳定，Telegram 机器人路线可以绕开网页端验证码问题。</b></p>
-  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/main">telegram绑定签到（V3版本 当前推荐方案）：telethon分支 </a> 👈</h3>
+  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/telethon">telegram绑定签到（V3版本 当前推荐方案）：telethon分支 </a> 👈</h3>
   <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/feature_yescaptcha">使用yescaptcha进行签到验证（V2版本 成功率较低 不推荐使用 可自行fork优化）：feature_yescaptcha分支</a> 👈</h3>
   <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/main">网页端签到分支（V1版本 无签到验证时使用 不再维护）：main分支</a> 👈</h3>
   <br/>
@@ -17,7 +17,7 @@
 - 🔄 **多账号支持**：支持多个 Telegram 账号，每个账号使用自己的 `session`。
 - 🎲 **机器人签到**：向 HDHive Telegram 机器人发送 `赌狗签到`，不再依赖网页端签到按钮。
 - ☁️ **开箱即用的 CI**：内置 GitHub Actions 工作流，支持定时自动执行和手动触发。
-- 📢 **结果通知**：支持每个账号给自己发送单独通知，也支持主账号接收所有账号汇总通知。
+- 📢 **结果通知**：支持每个账号给自己发送单独通知，也支持通过 Telegram Bot 发送所有账号汇总通知。
 - 🧾 **结果留档**：会保存执行结果到 `artifacts/latest-results.json`，并写入 GitHub Actions Summary。
 - 🔐 **安全配置**：敏感信息通过 GitHub Secrets 管理，本地配置文件默认不会提交。
 
@@ -35,7 +35,7 @@
    - `你已经签到过了，明天再来吧`
    - 失败或未知回复
 7. 给每个账号发送自己的通知。
-8. 给主账号发送所有账号汇总通知。
+8. 通过 Telegram Bot 发送所有账号汇总通知。
 9. 保存结果文件。
 
 ## 准备工作
@@ -208,7 +208,7 @@ cp local.config.example.json local.config.json
 
 含义：这个账号签到完成后，把自己的结果发到自己的 Telegram Saved Messages。
 
-### 主账号汇总通知
+### 所有账号汇总通知
 
 配置在顶层：
 
@@ -377,17 +377,17 @@ TELEGRAM_SUMMARY_NOTIFY_CHAT_ID = 123456789
 
 工作流支持三种触发方式：
 
-- 定时触发：北京时间每天 `06:23`。
+- 定时触发：北京时间每天 `05:23`。
 - 手动触发：GitHub Actions 页面点击 `Run workflow`。
 - push 触发：当 `scripts/**`、`tests/**`、workflow、依赖或配置模板变化时触发。
 
 定时配置在 [.github/workflows/checkin.yml](/Users/sue/hdhive-auto-checkin/.github/workflows/checkin.yml)：
 
 ```yaml
-cron: "23 22 * * *"
+cron: "23 21 * * *"
 ```
 
-这个时间是 UTC，对应北京时间每天 `06:23`。
+这个时间是 UTC，对应北京时间每天 `05:23`。
 
 ## 机器人回复如何判断
 
