@@ -1,10 +1,11 @@
 <div align="center">
   <h1>🚨 HDHive 自动签到 🚨</h1>
   <p><b>基于 `Python + Playwright` 编写的 HDHive 自动化签到工具</b></p>
-  <p><b>⚠️ 重要提醒：HDHive 官网可能在签到前触发 Cloudflare Turnstile 或站内点选验证码，当前分支已接入 YesCaptcha 进行自动处理。</b></p>
-  <p><b>站点验证策略会变化，建议与 <code>telethon</code> 分支并行观察一段时间；如不想依赖网页验证码，也可以切换到 Telegram 机器人签到方案。</b></p>
+  <p><b>当前定位：YesCaptcha 网页验证码实验分支，尝试处理 Cloudflare Turnstile 和 HDHive 站内点选验证码。</b></p>
+  <p><b>⚠️ 重要提醒：实测 HDHive 图形点选验证通过率不稳定，不建议作为日常自动签到主方案。</b></p>
+  <p><b>当前推荐使用 <code>telethon</code> 分支，通过 Telegram 机器人完成签到，绕开网页端验证码不稳定问题。</b></p>
   <p><b>由于 HDHive 站点使用了 Next.js Server Actions，其请求头中包含了动态的 `Next_Action` 校验参数，使用传统的纯 HTTP 请求（如 requests/curl）进行模拟非常繁琐且易失效，需要频繁抓包修改配置。故新版本通过 Playwright 驱动真实浏览器进行自动化操作，完美绕过动态参数校验，实现更加稳定的自动化签到。</b></p>
-  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/telethon">备用方案：Telegram 机器人签到版</a> 👈</h3>
+  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/telethon">当前推荐方案：Telegram 机器人签到版</a> 👈</h3>
   <h3>👉 <a href="https://github.com/suversal/auto-check">旧版方案地址：HDHive自动化签到工具 (传统HTTP请求版 需手动维护ActionId)</a> 👈</h3>
   <br/>
 </div>
