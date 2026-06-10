@@ -1435,8 +1435,8 @@ def wait_for_points_record_body(page: Page, attempt: int, *, timeout_ms: int = 1
 
 
 def confirm_checkin_from_points_records(page: Page, attempt: int) -> Optional[str]:
-    """When the Server Action result is unknown, confirm success via today's points records."""
-    log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 未拿到明确响应，开始前往积分记录页核验...")
+    """When the Server Action says already signed, confirm today's points record."""
+    log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 接口返回已签到，开始前往积分记录页核验...")
 
     log(f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 先刷新页面，等待站内提示和菜单状态稳定...")
     try:
@@ -1734,8 +1734,6 @@ def result_source_label(result_source: str) -> str:
 
 def should_confirm_via_points_records(response_success: Optional[bool], description: str) -> bool:
     """Decide whether the result should be reconciled against today's points records."""
-    if response_success is None:
-        return True
     normalized_description = compact(description)
     return response_success is False and "已经签到过" in normalized_description
 

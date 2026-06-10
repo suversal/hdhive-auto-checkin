@@ -731,6 +731,37 @@ class CheckinRetryTest(unittest.TestCase):
         self.assertIsNone(result.response_success)
         self.assertEqual(result.result_source, "")
 
+    def test_perform_checkin_does_not_confirm_unknown_response_via_points_records(self) -> None:
+        account = AccountConfig(username="user@example.com", password="secret", sign_type="gamble")
+        page = Mock()
+        response = Mock()
+        response.status = 200
+        response.request.headers = {"next-action": "token"}
+        body_result = ResponseBodyReadResult(
+            decoded_text="",
+            raw_text_preview="",
+            raw_bytes_len=0,
+            read_status="exception",
+            exception_type="Error",
+            exception_message="No data found for resource with given identifier",
+            header_content_type="text/x-component",
+        )
+        with (
+            patch("scripts.checkin.open_user_menu", return_value=True),
+            patch("scripts.checkin.click_menu_entry", return_value=True),
+            patch("scripts.checkin.wait_for_checkin_action_response", return_value=response),
+            patch("scripts.checkin.select_action_response", return_value=(response, body_result, None, "", "")),
+            patch("scripts.checkin.confirm_checkin_from_points_records") as confirm_points,
+            patch("scripts.checkin.take_screenshot", return_value="artifacts/unknown.png"),
+        ):
+            result = perform_checkin(page, account, attempt=2)
+
+        self.assertEqual(result.status, "unknown")
+        self.assertIsNone(result.response_success)
+        self.assertEqual(result.result_source, "")
+        self.assertEqual(result.screenshot_path, "artifacts/unknown.png")
+        confirm_points.assert_not_called()
+
     def test_perform_checkin_continues_after_captcha_required_response(self) -> None:
         account = AccountConfig(username="user@example.com", password="secret", sign_type="gamble")
         page = Mock()
