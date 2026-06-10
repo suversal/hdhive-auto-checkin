@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - main
+      - feature_yescaptcha
     paths:
       - "scripts/**"
       - ".github/workflows/checkin.yml"
@@ -25,6 +25,12 @@ jobs:
       TZ: Asia/Shanghai
       HDHIVE_ACCOUNTS_JSON: ${{ secrets.HDHIVE_ACCOUNTS_JSON }}
       HDHIVE_SIGN_TYPE: ${{ vars.HDHIVE_SIGN_TYPE }}
+      YESCAPTCHA_CLIENT_KEY: ${{ secrets.YESCAPTCHA_CLIENT_KEY || vars.YESCAPTCHA_CLIENT_KEY }}
+      YESCAPTCHA_API_BASE_URL: ${{ vars.YESCAPTCHA_API_BASE_URL }}
+      YESCAPTCHA_TASK_TYPE: ${{ vars.YESCAPTCHA_TASK_TYPE }}
+      YESCAPTCHA_SPACE_TASK_TYPE: ${{ vars.YESCAPTCHA_SPACE_TASK_TYPE }}
+      YESCAPTCHA_SPACE_IMAGE_SOURCE: ${{ vars.YESCAPTCHA_SPACE_IMAGE_SOURCE }}
+      YESCAPTCHA_SPACE_MAX_SOLVES: ${{ vars.YESCAPTCHA_SPACE_MAX_SOLVES }}
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
       TELEGRAM_CHAT_ID: ${{ vars.TELEGRAM_CHAT_ID }}
       # Keep CI on the same browser mode as the verified local setup.
