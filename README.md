@@ -122,7 +122,7 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 - `YESCAPTCHA_API_BASE_URL`：YesCaptcha API 节点，默认 `https://api.yescaptcha.com`
 - `YESCAPTCHA_TASK_TYPE`：Cloudflare Turnstile 任务类型，默认 `TurnstileTaskProxyless`
 - `YESCAPTCHA_SPACE_TASK_TYPE`：HDHive 站内点选验证码识别任务类型，默认 `HCaptchaClassification`
-- `YESCAPTCHA_SPACE_IMAGE_SOURCE`：提交给 YesCaptcha 的点选验证码图片来源，默认 `original`。点选验证码已验证应提交网页原始图片和原始中文提示；`screenshot` 仅保留为排障选项
+- `YESCAPTCHA_SPACE_IMAGE_SOURCE`：提交给 YesCaptcha 的点选验证码图片来源，默认 `original`。默认模式会优先将页面验证码图绘制到 canvas 后转为 JPG 再提交；`screenshot` 仅保留为排障选项
 - `YESCAPTCHA_SPACE_MAX_SOLVES`：单次签到尝试内最多处理几轮站内点选验证码，默认 `3`
 - `HDHIVE_SPACE_CHALLENGE_SETTLE_SECONDS`：点选验证码弹出后等待图片和提示稳定的秒数，默认 `1.5`
 - `HDHIVE_SPACE_CLICK_DELAY_SECONDS`：点选验证码多坐标点击之间的间隔秒数，默认 `0.8`
@@ -134,7 +134,7 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 验证码处理说明：
 
 - 如果签到前触发 Cloudflare Turnstile，脚本会提取页面 `websiteKey` 并通过 YesCaptcha 获取 token 后提交。
-- 如果触发 HDHive 站内 `Security Verification` 点选验证码，脚本会等待验证码弹窗稳定，读取原始验证码图片和中文提示，调用 YesCaptcha `HCaptchaClassification` 返回点击坐标，再按页面显示比例点击。
+- 如果触发 HDHive 站内 `Security Verification` 点选验证码，脚本会等待验证码弹窗稳定，读取验证码图片和中文提示，优先提交 canvas 转出的 JPG，调用 YesCaptcha `HCaptchaClassification` 返回点击坐标，再按页面显示比例点击。
 - 验证失败时脚本会刷新点选验证码并重试，达到 `YESCAPTCHA_SPACE_MAX_SOLVES` 后停止本轮签到尝试，避免持续错误点击。
 
 本地文件与环境变量的优先级：

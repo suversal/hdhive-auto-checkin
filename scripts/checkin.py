@@ -406,11 +406,13 @@ SPACE_CLICK_CHALLENGE_SCRIPT = """() => {
   let src = '';
   let naturalWidth = 0;
   let naturalHeight = 0;
+  let imageSource = 'original';
   if (image.tagName && image.tagName.toLowerCase() === 'canvas') {
     try {
       src = image.toDataURL('image/jpeg', 0.92);
       naturalWidth = image.width || 0;
       naturalHeight = image.height || 0;
+      imageSource = 'canvas_jpeg';
     } catch (_error) {
       return null;
     }
@@ -418,6 +420,19 @@ SPACE_CLICK_CHALLENGE_SCRIPT = """() => {
     src = image.getAttribute('src') || '';
     naturalWidth = image.naturalWidth || image.width || 0;
     naturalHeight = image.naturalHeight || image.height || 0;
+    try {
+      if (naturalWidth > 0 && naturalHeight > 0 && image.complete !== false) {
+        const canvas = document.createElement('canvas');
+        canvas.width = naturalWidth;
+        canvas.height = naturalHeight;
+        const context = canvas.getContext('2d');
+        context.drawImage(image, 0, 0, naturalWidth, naturalHeight);
+        src = canvas.toDataURL('image/jpeg', 0.92);
+        imageSource = 'img_canvas_jpeg';
+      }
+    } catch (_error) {
+      imageSource = 'img_src';
+    }
   }
 
   const imageRect = image.getBoundingClientRect();
@@ -443,6 +458,7 @@ SPACE_CLICK_CHALLENGE_SCRIPT = """() => {
     imageOffsetY: imageRect.top - stageRect.top,
     imageViewportX: imageRect.left,
     imageViewportY: imageRect.top,
+    imageSource,
   };
 }"""
 
@@ -603,6 +619,7 @@ class SpaceClickChallenge:
     image_offset_y: float = 0
     image_viewport_x: float = -1
     image_viewport_y: float = -1
+    image_source: str = "original"
 
 
 @dataclass
@@ -1077,6 +1094,7 @@ def extract_space_click_challenge(page: Page) -> Optional[SpaceClickChallenge]:
         image_offset_y=image_offset_y,
         image_viewport_x=image_viewport_x,
         image_viewport_y=image_viewport_y,
+        image_source=str(data.get("imageSource", "")).strip() or "original",
     )
 
 
@@ -1127,6 +1145,7 @@ def capture_space_click_challenge_display_image(page: Page, challenge: SpaceClic
         image_height=float(clip["height"]),
         display_width=float(clip["width"]),
         display_height=float(clip["height"]),
+        image_source="screenshot_jpeg",
     )
 
 
@@ -1209,7 +1228,11 @@ def solve_space_click_challenge_if_present(page: Page, attempt: int) -> bool:
 
     log(
         f"[尝试 {attempt}/{MAX_CHECKIN_ATTEMPTS}] 检测到 HDHive 点选验证码，"
-        f"task_type={YESCAPTCHA_SPACE_TASK_TYPE}, prompt={challenge.prompt}"
+        f"task_type={YESCAPTCHA_SPACE_TASK_TYPE}, "
+        f"image_source={challenge.image_source}, "
+        f"upload_size={challenge.image_width:.0f}x{challenge.image_height:.0f}, "
+        f"display_size={challenge.display_width:.0f}x{challenge.display_height:.0f}, "
+        f"prompt={challenge.prompt}"
     )
     points = request_yescaptcha_space_click_points(YESCAPTCHA_CLIENT_KEY, challenge)
     if not points:

@@ -268,6 +268,7 @@ class CheckinRetryTest(unittest.TestCase):
         self.assertEqual(updated.image_height, 187)
         self.assertEqual(updated.display_width, 414)
         self.assertEqual(updated.display_height, 187)
+        self.assertEqual(updated.image_source, "screenshot_jpeg")
         page.screenshot.assert_called_once_with(
             type="jpeg",
             quality=92,
