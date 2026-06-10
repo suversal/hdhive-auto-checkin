@@ -4,10 +4,10 @@
   <p><b>当前定位：通过真实浏览器完成网页登录、签到操作和积分记录核验。</b></p>
   <p><b>适用场景：站点未触发额外验证时，保留最直接的网页端签到流程。</b></p>
   <p><b>⚠️ 边界说明：当前 <code>main</code> 分支不接入验证码服务；如果触发 Cloudflare 或站内点选验证，可能无法完成签到。</b></p>
-  <p><b>如果需要网页验证码处理，请使用 <code>feature_yescaptcha</code> 分支；如果需要 Telegram 机器人签到，请使用 <code>telethon</code> 分支。</b></p>
+  <p><b>实测 <code>feature_yescaptcha</code> 图形点选验证通过率不稳定，当前不建议作为主方案；推荐使用 <code>telethon</code> 分支通过 Telegram 机器人签到。</b></p>
   <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/action">统一调度分支：action</a> 👈</h3>
-  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/telethon">Telegram 机器人签到分支：telethon</a> 👈</h3>
-  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/feature_yescaptcha">网页验证码处理分支：feature_yescaptcha</a> 👈</h3>
+  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/telethon">当前推荐方案：telethon</a> 👈</h3>
+  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/feature_yescaptcha">不稳定实验方案：feature_yescaptcha</a> 👈</h3>
   <br/>
 </div>
 
