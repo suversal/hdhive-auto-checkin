@@ -75,8 +75,13 @@ def get_config_value(env_name: str, default: str = "", local_key: Optional[str] 
     key = local_key or env_name.lower()
     local_value = LOCAL_CONFIG.get(key)
     if local_value is not None:
-        return str(local_value).strip()
-    return os.getenv(env_name, default).strip()
+        value = str(local_value).strip()
+        return value if value else default
+    value = os.getenv(env_name)
+    if value is None:
+        return default
+    value = value.strip()
+    return value if value else default
 
 # 初始化配置
 LOCAL_CONFIG_PATH, LOCAL_CONFIG = load_local_config()

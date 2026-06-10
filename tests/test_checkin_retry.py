@@ -17,6 +17,7 @@ from scripts.checkin import (
     create_yescaptcha_turnstile_task,
     extract_action_fields,
     extract_today_checkin_remark,
+    get_config_value,
     is_captcha_required_response,
     parse_yescaptcha_click_points,
     perform_checkin,
@@ -52,6 +53,16 @@ def make_result_with_attempt(response_success, attempt: int):
 
 
 class CheckinRetryTest(unittest.TestCase):
+    def test_get_config_value_uses_default_for_blank_environment_value(self) -> None:
+        with patch("scripts.checkin.LOCAL_CONFIG", {}), patch.dict(
+            "os.environ",
+            {"YESCAPTCHA_SPACE_MAX_SOLVES": ""},
+        ):
+            self.assertEqual(
+                get_config_value("YESCAPTCHA_SPACE_MAX_SOLVES", "3", "yescaptcha_space_max_solves"),
+                "3",
+            )
+
     def test_create_yescaptcha_turnstile_task_posts_documented_payload(self) -> None:
         class FakeResponse:
             status = 200
