@@ -1,12 +1,12 @@
 <div align="center">
   <h1>🧩 HDHive Telegram 自动签到 🧩</h1>
   <p><b>基于 `Python + Telethon + GitHub Actions` 编写的 HDHive 自动化签到工具</b></p>
-  <p><b>当前定位：不访问 HDHive 网页，也不依赖 Playwright 点击签到按钮；通过 Telegram 用户会话向已绑定 HDHive 账号的机器人发送 <code>赌狗签到</code>。</b></p>
-  <p><b>适用场景：网页端被 Cloudflare 或站内验证影响时，保留一条不经过网页 UI 的签到路线。</b></p>
-  <p><b>如果想先跑网页端再跑 Telegram 兜底，可以使用 <code>action</code> 分支统一调度。</b></p>
-  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/action">统一调度分支：action</a> 👈</h3>
+  <p><b>当前定位：推荐使用的 HDHive 自动签到方案，不访问 HDHive 网页，也不依赖 Playwright 点击签到按钮。</b></p>
+  <p><b>工作方式：通过 Telegram 用户会话向已绑定 HDHive 账号的机器人发送 <code>赌狗签到</code>，再解析机器人回复生成结果通知。</b></p>
+  <p><b>推荐原因：实测 YesCaptcha 网页图形点选验证通过率不稳定，Telegram 机器人路线可以绕开网页端验证码问题。</b></p>
+  <h3>👉 当前推荐方案：telethon 👈</h3>
   <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/main">网页端签到分支：main</a> 👈</h3>
-  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/feature_yescaptcha">网页验证码处理分支：feature_yescaptcha</a> 👈</h3>
+  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/feature_yescaptcha">不稳定实验方案：feature_yescaptcha</a> 👈</h3>
   <br/>
 </div>
 
