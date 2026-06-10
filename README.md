@@ -4,10 +4,9 @@
   <p><b>当前定位：YesCaptcha 网页验证码实验分支，尝试接入YesCaptcha处理 Cloudflare Turnstile 和 HDHive 站内点选验证码。</b></p>
   <p><b>⚠️ 重要提醒：实测 HDHive 图形点选验证通过率不稳定，不建议作为日常自动签到主方案。</b></p>
   <p><b>当前推荐使用 <code>telethon</code> 分支，通过 Telegram 机器人完成签到，绕开网页端验证码不稳定问题。</b></p>
-  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/main">telegram绑定签到（V3版本 前推荐方案）：telethon分支 </a> 👈</h3>
+  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/main">telegram绑定签到（V3版本 当前推荐方案）：telethon分支 </a> 👈</h3>
   <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/feature_yescaptcha">使用yescaptcha进行签到验证（V2版本 成功率较低 不推荐使用 不再维护 可自行fork优化）：feature_yescaptcha分支</a> 👈</h3>
   <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/main">网页端签到分支（V1版本 无签到验证时使用 不再维护）：main分支</a> 👈</h3>
-  <h3>👉 <a href="https://github.com/suversal/auto-check">旧版方案地址：HDHive自动化签到工具 (V0版本 传统HTTP请求版 需手动维护ActionId 不再维护)</a> 👈</h3>
   <br/>
 </div>
 
