@@ -1,7 +1,7 @@
 <div align="center">
   <h1>🧩 HDHive Telegram 自动签到 🧩</h1>
   <p><b>基于 `Python + Telethon + GitHub Actions` 编写的 HDHive 自动化签到工具</b></p>
-  <p><b>当前定位：推荐使用的 HDHive 自动签到方案，不访问 HDHive 网页，也不依赖 Playwright 点击签到按钮。</b></p>
+  <p><b>当前定位：使用telethon脚本获取绑定账号的Telegram_session，自动发送签到信息给HDhive机器人，不访问 HDHive 网页，也不依赖 Playwright 模拟网页点击签到按钮。</b></p>
   <p><b>工作方式：通过 Telegram 用户会话向已绑定 HDHive 账号的机器人发送 <code>赌狗签到</code>，再解析机器人回复生成结果通知。</b></p>
   <p><b>推荐原因：实测 YesCaptcha 网页图形点选验证通过率不稳定，Telegram 机器人路线可以绕开网页端验证码问题。</b></p>
   <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/telethon">telegram绑定签到（V3版本 当前推荐方案）：telethon分支 </a> 👈</h3>
