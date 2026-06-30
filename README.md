@@ -501,4 +501,4 @@ python -m json.tool local.config.json
 如果你在使用过程中遇到问题，欢迎联系我：
 
 - Telegram: [@suversal](https://t.me/suversal)
-- Email: `suyloveslife@gmail.com`
+- Email: `suversia@gmail.com`
