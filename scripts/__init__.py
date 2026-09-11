@@ -1,1 +1,1 @@
-"""HDHive automation scripts."""
+"""Telegram automation scripts."""

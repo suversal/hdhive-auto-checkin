@@ -1,23 +1,50 @@
 {
+  "project_name": "Telegram 自动任务",
   "telegram_api_id": "123456",
   "telegram_api_hash": "your-api-hash",
   "telegram_bot_token": "your-telegram-bot-token",
-  "telegram_response_timeout_seconds": "60",
   "telegram_summary_notify_chat_id": "123456789",
-  "hdhive_telegram_accounts_json": [
+  "telegram_response_timeout_seconds": "60",
+  "telegram_proxy": {
+    "type": "socks5",
+    "host": "127.0.0.1",
+    "port": 7897
+  },
+  "telegram_accounts": [
     {
-      "name": "account-1",
+      "name": "账号 A",
       "session": "first-account-telethon-string-session",
-      "bot_username": "@HDHiveBot",
-      "command": "赌狗签到",
-      "notify_chat_id": "me"
+      "notify_chat_id": "me",
+      "tasks": [
+        {
+          "name": "HDHive 自动签到",
+          "type": "签到",
+          "target_account": "suloveslife@qq.com",
+          "bot_username": "@HDHiveBot",
+          "message": "赌狗签到"
+        },
+        {
+          "name": "癫影自动签到",
+          "type": "签到",
+          "target_account": "xxxxx",
+          "bot_username": "@dianyingbalala_bot",
+          "message": "/lqd"
+        }
+      ]
     },
     {
-      "name": "account-2",
+      "name": "账号 B",
       "session": "second-account-telethon-string-session",
-      "bot_username": "@HDHiveBot",
-      "command": "赌狗签到",
-      "notify_chat_id": "me"
+      "notify_chat_id": "me",
+      "tasks": [
+        {
+          "name": "HDHive 自动签到",
+          "type": "签到",
+          "target_account": "suyang219@gmail.com",
+          "bot_username": "@HDHiveBot",
+          "message": "赌狗签到"
+        }
+      ]
     }
   ]
 }

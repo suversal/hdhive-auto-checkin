@@ -1,125 +1,133 @@
 import unittest
-from unittest.mock import AsyncMock, Mock
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from urllib.parse import parse_qs
+from unittest.mock import AsyncMock, Mock
 
+from scripts.generate_telegram_session import build_session_output, validate_api_credentials
 from scripts.telegram_checkin import (
+    TelegramTaskResult,
+    build_account_notification_message,
     build_markdown_summary,
     build_summary_message,
-    build_run_summary,
     build_summary_notification_message,
-    TelegramRuntimeConfig,
-    TelegramCheckinResult,
     load_account_configs_from_mapping,
-    load_telegram_bot_token_from_mapping,
+    load_runtime_config_from_mapping,
     load_summary_notify_chat_id_from_mapping,
+    load_telegram_bot_token_from_mapping,
+    parse_telegram_proxy,
     resolve_notify_target,
+    send_account_notification,
     send_run_summary_notification,
     send_summary_notification,
-    parse_bot_reply,
     write_outputs,
 )
-from scripts.generate_telegram_session import build_session_output, validate_api_credentials
 
 
-class TelegramReplyParsingTest(unittest.IsolatedAsyncioTestCase):
-    def test_parses_success_with_points(self) -> None:
-        result = parse_bot_reply("🎰 签到成功，获得 16 积分", command="赌狗签到")
+class TelegramTaskConfigTest(unittest.IsolatedAsyncioTestCase):
+    def test_load_runtime_config_accepts_account_grouped_tasks(self) -> None:
+        runtime = load_runtime_config_from_mapping(
+            {
+                "project_name": "Telegram 自动任务",
+                "telegram_api_id": "123",
+                "telegram_api_hash": "hash",
+                "telegram_response_timeout_seconds": "30",
+                "telegram_accounts": [
+                    {
+                        "name": "账号 A",
+                        "session": "session-a",
+                        "notify_chat_id": "me",
+                        "tasks": [
+                            {
+                                "name": "HDHive 自动签到",
+                                "type": "签到",
+                                "target_account": "suloveslife@qq.com",
+                                "bot_username": "@HDHiveBot",
+                                "message": "赌狗签到",
+                            },
+                            {
+                                "name": "癫影自动签到",
+                                "type": "签到",
+                                "target_account": "xxxxx",
+                                "bot_username": "@dianyingbalala_bot",
+                                "message": "/lqd",
+                            },
+                        ],
+                    }
+                ],
+            }
+        )
 
-        self.assertEqual(result.status, "success")
-        self.assertTrue(result.response_success)
-        self.assertEqual(result.points, 16)
-        self.assertFalse(result.already_signed)
-        self.assertEqual(result.description, "🎰 签到成功，获得 16 积分")
+        self.assertEqual(runtime.project_name, "Telegram 自动任务")
+        self.assertEqual(len(runtime.accounts), 1)
+        self.assertEqual(runtime.accounts[0].name, "账号 A")
+        self.assertEqual(runtime.accounts[0].notify_chat_id, "me")
+        self.assertEqual(len(runtime.accounts[0].tasks), 2)
+        self.assertEqual(runtime.accounts[0].tasks[0].message, "赌狗签到")
+        self.assertEqual(runtime.accounts[0].tasks[1].bot_username, "@dianyingbalala_bot")
 
-    def test_parses_success_with_zero_points(self) -> None:
-        result = parse_bot_reply("🎰 签到成功，获得 0 积分", command="赌狗签到")
-
-        self.assertEqual(result.status, "success")
-        self.assertTrue(result.response_success)
-        self.assertEqual(result.points, 0)
-
-    def test_treats_already_signed_as_success(self) -> None:
-        result = parse_bot_reply("你已经签到过了，明天再来吧", command="赌狗签到")
-
-        self.assertEqual(result.status, "success")
-        self.assertTrue(result.response_success)
-        self.assertTrue(result.already_signed)
-        self.assertIsNone(result.points)
-        self.assertEqual(result.description, "你已经签到过了，明天再来吧")
-
-    def test_parses_explicit_failure(self) -> None:
-        result = parse_bot_reply("签到失败，请稍后再试", command="赌狗签到")
-
-        self.assertEqual(result.status, "failed")
-        self.assertFalse(result.response_success)
-        self.assertEqual(result.description, "签到失败，请稍后再试")
-
-    def test_unknown_reply_keeps_raw_text(self) -> None:
-        result = parse_bot_reply("当前服务繁忙", command="赌狗签到")
-
-        self.assertEqual(result.status, "unknown")
-        self.assertIsNone(result.response_success)
-        self.assertEqual(result.description, "当前服务繁忙")
-
-    def test_summary_marks_already_signed_successfully(self) -> None:
-        result = parse_bot_reply("你已经签到过了，明天再来吧", command="赌狗签到")
-
-        message = build_summary_message(result)
-
-        self.assertIn("状态: <b>签到成功</b>", message)
-        self.assertIn("已签: <code>是</code>", message)
-        self.assertIn("你已经签到过了，明天再来吧", message)
-
-    def test_summary_escapes_html_reply_text(self) -> None:
-        result = parse_bot_reply("签到失败 <retry>", command="赌狗签到")
-
-        message = build_summary_message(result)
-
-        self.assertIn("签到失败 &lt;retry&gt;", message)
-        self.assertNotIn("签到失败 <retry>", message)
-
-    def test_markdown_summary_contains_points(self) -> None:
-        result = parse_bot_reply("🎰 签到成功，获得 16 积分", command="赌狗签到")
-
-        summary = build_markdown_summary(result)
-
-        self.assertIn("- Success: `1`", summary)
-        self.assertIn("| default | `赌狗签到` | `success` | `False` | `16` |", summary)
-
-    def test_write_outputs_saves_latest_results_json(self) -> None:
-        result = parse_bot_reply("🎰 签到成功，获得 16 积分", command="赌狗签到")
-
-        with TemporaryDirectory() as temp_dir:
-            write_outputs(result, Path(temp_dir))
-            saved = Path(temp_dir, "latest-results.json").read_text(encoding="utf-8")
-
-        self.assertIn('"status": "success"', saved)
-        self.assertIn('"points": 16', saved)
-
-    def test_load_account_configs_from_accounts_json(self) -> None:
+    def test_load_account_configs_keeps_legacy_compatibility(self) -> None:
         configs = load_account_configs_from_mapping(
             {
                 "telegram_api_id": "123",
                 "telegram_api_hash": "hash",
-                "telegram_response_timeout_seconds": "30",
-                "hdhive_telegram_accounts_json": """
-                [
-                  {"name": "account-a", "session": "session-a", "bot_username": "@bot_a"},
-                  {"name": "account-b", "session": "session-b", "bot_username": "@bot_b", "command": "签到", "notify_chat_id": ""}
-                ]
-                """,
+                "hdhive_telegram_accounts_json": [
+                    {"name": "account-a", "session": "session-a", "bot_username": "@bot_a"},
+                    {"name": "account-b", "session": "session-b", "bot_username": "@bot_b", "command": "签到"},
+                ],
             }
         )
 
         self.assertEqual(len(configs), 2)
         self.assertEqual(configs[0].name, "account-a")
         self.assertEqual(configs[0].command, "赌狗签到")
-        self.assertEqual(configs[0].notify_chat_id, "")
         self.assertEqual(configs[1].name, "account-b")
         self.assertEqual(configs[1].command, "签到")
-        self.assertEqual(configs[1].notify_chat_id, "")
+
+    def test_load_runtime_config_requires_tasks(self) -> None:
+        with self.assertRaisesRegex(Exception, "tasks"):
+            load_runtime_config_from_mapping(
+                {
+                    "telegram_api_id": "123",
+                    "telegram_api_hash": "hash",
+                    "telegram_accounts": [
+                        {"name": "账号 A", "session": "session-a", "tasks": []}
+                    ],
+                }
+            )
+
+    def test_load_runtime_config_accepts_proxy_object(self) -> None:
+        fake_socks = Mock(SOCKS5=10, SOCKS4=20, HTTP=30)
+        with unittest.mock.patch("scripts.telegram_checkin.socks", fake_socks):
+            runtime = load_runtime_config_from_mapping(
+                {
+                    "telegram_api_id": "123",
+                    "telegram_api_hash": "hash",
+                    "telegram_proxy": {
+                        "type": "socks5",
+                        "host": "127.0.0.1",
+                        "port": 7897,
+                    },
+                    "telegram_accounts": [
+                        {
+                            "name": "账号 A",
+                            "session": "session-a",
+                            "tasks": [{"name": "任务 A", "bot_username": "@bot_a", "message": "签到"}],
+                        }
+                    ],
+                }
+            )
+
+        self.assertEqual(runtime.proxy, (10, "127.0.0.1", 7897, True))
+        self.assertEqual(runtime.proxy_label, "socks5://127.0.0.1:7897")
+
+    def test_parse_telegram_proxy_accepts_url(self) -> None:
+        fake_socks = Mock(SOCKS5=10, SOCKS4=20, HTTP=30)
+        with unittest.mock.patch("scripts.telegram_checkin.socks", fake_socks):
+            proxy, label = parse_telegram_proxy("socks5://127.0.0.1:7897")
+
+        self.assertEqual(proxy, (10, "127.0.0.1", 7897, True))
+        self.assertEqual(label, "socks5://127.0.0.1:7897")
 
     def test_load_summary_notify_chat_id_is_separate_from_account_notify_targets(self) -> None:
         mapping = {
@@ -135,116 +143,137 @@ class TelegramReplyParsingTest(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(load_telegram_bot_token_from_mapping(mapping), "bot-token")
 
-    def test_build_summary_notification_message_lists_all_accounts(self) -> None:
+    def test_summary_message_contains_raw_bot_reply_without_success_stats(self) -> None:
+        result = TelegramTaskResult(
+            telegram_account_name="账号 A",
+            task_name="HDHive 自动签到",
+            task_type="签到",
+            target_account="suloveslife@qq.com",
+            bot_username="@HDHiveBot",
+            sent_message="赌狗签到",
+            status="replied",
+            reply_text="你已经签到过了，明天再来吧",
+            elapsed_seconds=1.2,
+        )
+
+        message = build_summary_message(result)
+
+        self.assertIn("Telegram 自动任务", message)
+        self.assertIn("任务名称：HDHive 自动签到", message)
+        self.assertIn("机器人返回：你已经签到过了，明天再来吧", message)
+        self.assertNotIn("统计汇总", message)
+        self.assertNotIn("签到成功", message)
+
+    def test_build_summary_notification_message_groups_by_telegram_account(self) -> None:
         results = [
-            TelegramCheckinResult(
-                account_name="account-a",
-                command="赌狗签到",
-                status="success",
-                response_success=True,
-                message="签到成功",
-                description="签到成功，获得 1 积分",
-                points=1,
+            TelegramTaskResult(
+                telegram_account_name="账号 A",
+                task_name="HDHive 自动签到",
+                task_type="签到",
+                target_account="suloveslife@qq.com",
+                bot_username="@HDHiveBot",
+                sent_message="赌狗签到",
+                status="replied",
+                reply_text="你已经签到过了，明天再来吧",
             ),
-            TelegramCheckinResult(
-                account_name="account-b",
-                command="赌狗签到",
-                status="success",
-                response_success=True,
-                message="今日已签到",
-                description="你已经签到过了，明天再来吧",
-                already_signed=True,
+            TelegramTaskResult(
+                telegram_account_name="账号 A",
+                task_name="癫影自动签到",
+                task_type="签到",
+                target_account="xxxxx",
+                bot_username="@dianyingbalala_bot",
+                sent_message="/lqd",
+                status="timeout",
+                reply_text="超过 60 秒未收到机器人回复",
+            ),
+            TelegramTaskResult(
+                telegram_account_name="账号 B",
+                task_name="任务 B",
+                task_type="提醒",
+                target_account="xx",
+                bot_username="@other_bot",
+                sent_message="hello",
+                status="replied",
+                reply_text="ok",
             ),
         ]
 
-        message = build_summary_notification_message(results)
+        message = build_summary_notification_message("Telegram 自动任务", results)
 
-        self.assertIn("🧩 <b>HDHive 自动签到</b>", message)
-        self.assertIn("━━━━━━━━━━━━━━━━━━", message)
-        self.assertIn("🌐 目标站点：<code>https://hdhive.com</code>", message)
-        self.assertIn("📊 统计汇总：成功 2  /失败 0  /未知 0", message)
-        self.assertIn("⎡ 📧 账号：<code>account-a</code>", message)
-        self.assertIn("├ 🏷️ 类型：赌狗签到", message)
-        self.assertIn("⎣ 📝 结果：签到成功，获得 1 积分", message)
-        self.assertIn("⎡ 📧 账号：<code>account-b</code>", message)
-        self.assertIn("⎣ 📝 结果：你已经签到过了，明天再来吧", message)
+        self.assertIn("🧩 <b>Telegram 自动任务汇总</b>", message)
+        self.assertIn("📦 任务数量：3", message)
+        self.assertIn("👥 Telegram账号：<code>账号 A</code>", message)
+        self.assertIn("⎡ 🏷️ 任务名称：癫影自动签到", message)
+        self.assertIn("├ 📤 发送内容：<code>/lqd</code>", message)
+        self.assertIn("⎣ 📝 机器人返回：超过 60 秒未收到机器人回复", message)
+        self.assertIn("👥 Telegram账号：<code>账号 B</code>", message)
+        self.assertNotIn("成功", message)
+        self.assertNotIn("失败", message)
 
-    def test_load_account_configs_accepts_local_list(self) -> None:
-        configs = load_account_configs_from_mapping(
-            {
-                "telegram_api_id": "123",
-                "telegram_api_hash": "hash",
-                "hdhive_telegram_accounts_json": [
-                    {"name": "account-a", "session": "session-a", "bot_username": "@bot_a"}
-                ],
-            }
+    def test_build_account_notification_message_lists_one_account_tasks(self) -> None:
+        result = TelegramTaskResult(
+            telegram_account_name="账号 A",
+            task_name="任务 A",
+            task_type="签到",
+            target_account="a@example.com",
+            bot_username="@bot",
+            sent_message="签到",
+            status="replied",
+            reply_text="ok",
         )
 
-        self.assertEqual(len(configs), 1)
-        self.assertEqual(configs[0].name, "account-a")
-        self.assertEqual(configs[0].session, "session-a")
+        message = build_account_notification_message("Telegram 自动任务", [result])
 
-    def test_load_account_configs_requires_accounts_array(self) -> None:
-        with self.assertRaisesRegex(Exception, "HDHIVE_TELEGRAM_ACCOUNTS_JSON"):
-            load_account_configs_from_mapping(
-                {
-                    "telegram_api_id": "123",
-                    "telegram_api_hash": "hash",
-                    "telegram_session": "single-session",
-                    "hdhive_bot_username": "@bot",
-                }
-            )
+        self.assertIn("👥 Telegram账号：<code>账号 A</code>", message)
+        self.assertIn("任务名称：任务 A", message)
+        self.assertIn("机器人返回：ok", message)
 
-    def test_load_account_configs_uses_default_command_when_account_omits_it(self) -> None:
-        configs = load_account_configs_from_mapping(
-            {
-                "telegram_api_id": "123",
-                "telegram_api_hash": "hash",
-                "hdhive_telegram_accounts_json": [
-                    {"name": "account-a", "session": "session-a", "bot_username": "@bot_a"}
-                ],
-            }
+    def test_markdown_summary_contains_raw_bot_reply(self) -> None:
+        result = TelegramTaskResult(
+            telegram_account_name="账号 A",
+            task_name="任务 A",
+            task_type="签到",
+            target_account="a@example.com",
+            bot_username="@bot",
+            sent_message="签到",
+            status="replied",
+            reply_text="ok",
         )
 
-        self.assertEqual(len(configs), 1)
-        self.assertEqual(configs[0].name, "account-a")
-        self.assertEqual(configs[0].command, "赌狗签到")
+        summary = build_markdown_summary(result)
 
-    def test_build_run_summary_counts_multiple_results(self) -> None:
-        results = [
-            TelegramCheckinResult(
-                account_name="a",
-                command="赌狗签到",
-                status="success",
-                response_success=True,
-                message="签到成功",
-                description="签到成功，获得 1 积分",
-            ),
-            TelegramCheckinResult(
-                account_name="b",
-                command="赌狗签到",
-                status="unknown",
-                response_success=None,
-                message="未识别机器人回复",
-                description="当前服务繁忙",
-            ),
-        ]
+        self.assertIn("# Telegram Automated Tasks", summary)
+        self.assertIn("| 账号 A | 任务 A | 签到 | a@example.com | `@bot` | `签到` | `replied` | ok |", summary)
 
-        summary = build_run_summary(results)
+    def test_write_outputs_saves_latest_results_json(self) -> None:
+        result = TelegramTaskResult(
+            telegram_account_name="账号 A",
+            task_name="任务 A",
+            task_type="签到",
+            target_account="a@example.com",
+            bot_username="@bot",
+            sent_message="签到",
+            status="replied",
+            reply_text="ok",
+        )
 
-        self.assertEqual(summary["total"], 2)
-        self.assertEqual(summary["success"], 1)
-        self.assertEqual(summary["unknown"], 1)
+        with TemporaryDirectory() as temp_dir:
+            write_outputs(result, Path(temp_dir))
+            saved = Path(temp_dir, "latest-results.json").read_text(encoding="utf-8")
+
+        self.assertIn('"total": 1', saved)
+        self.assertIn('"reply_text": "ok"', saved)
 
     def test_send_run_summary_notification_uses_telegram_bot_api(self) -> None:
-        result = TelegramCheckinResult(
-            account_name="account-a",
-            command="赌狗签到",
-            status="success",
-            response_success=True,
-            message="签到成功",
-            description="签到成功，获得 1 积分",
-            points=1,
+        result = TelegramTaskResult(
+            telegram_account_name="账号 A",
+            task_name="任务 A",
+            task_type="签到",
+            target_account="a@example.com",
+            bot_username="@bot",
+            sent_message="签到",
+            status="replied",
+            reply_text="ok",
         )
         captured = {}
 
@@ -265,7 +294,7 @@ class TelegramReplyParsingTest(unittest.IsolatedAsyncioTestCase):
             return FakeResponse()
 
         with unittest.mock.patch("scripts.telegram_checkin.urlopen", side_effect=fake_urlopen):
-            sent = send_run_summary_notification("bot-token", "123456", [result])
+            sent = send_run_summary_notification("bot-token", "123456", "Telegram 自动任务", [result])
 
         self.assertTrue(sent)
         self.assertEqual(captured["url"], "https://api.telegram.org/botbot-token/sendMessage")
@@ -273,20 +302,7 @@ class TelegramReplyParsingTest(unittest.IsolatedAsyncioTestCase):
         payload = parse_qs(captured["body"])
         self.assertEqual(payload["chat_id"], ["123456"])
         self.assertEqual(payload["parse_mode"], ["HTML"])
-        self.assertIn("account-a", payload["text"][0])
-
-    def test_validate_api_credentials_rejects_empty_values(self) -> None:
-        with self.assertRaisesRegex(RuntimeError, "API_ID"):
-            validate_api_credentials(0, "hash")
-        with self.assertRaisesRegex(RuntimeError, "API_HASH"):
-            validate_api_credentials(1, "")
-
-    def test_build_session_output_contains_secret_warning(self) -> None:
-        output = build_session_output("abc123")
-
-        self.assertIn("TELEGRAM_SESSION", output)
-        self.assertIn("abc123", output)
-        self.assertIn("不要提交", output)
+        self.assertIn("任务 A", payload["text"][0])
 
     async def test_resolve_notify_target_uses_me_for_current_user_id(self) -> None:
         client = Mock()
@@ -309,12 +325,53 @@ class TelegramReplyParsingTest(unittest.IsolatedAsyncioTestCase):
         client = Mock()
         client.get_me = AsyncMock(side_effect=ValueError("not found"))
         client.send_message = AsyncMock()
-        result = parse_bot_reply("你已经签到过了，明天再来吧", command="赌狗签到")
+        result = TelegramTaskResult(
+            telegram_account_name="账号 A",
+            task_name="任务 A",
+            task_type="签到",
+            target_account="a@example.com",
+            bot_username="@bot",
+            sent_message="签到",
+            status="replied",
+            reply_text="ok",
+        )
 
         sent = await send_summary_notification(client, "5795587098", result)
 
         self.assertFalse(sent)
         client.send_message.assert_not_called()
+
+    async def test_send_account_notification_uses_grouped_message(self) -> None:
+        client = Mock()
+        client.send_message = AsyncMock()
+        result = TelegramTaskResult(
+            telegram_account_name="账号 A",
+            task_name="任务 A",
+            task_type="签到",
+            target_account="a@example.com",
+            bot_username="@bot",
+            sent_message="签到",
+            status="replied",
+            reply_text="ok",
+        )
+
+        sent = await send_account_notification(client, "me", "Telegram 自动任务", [result])
+
+        self.assertTrue(sent)
+        client.send_message.assert_awaited_once()
+
+    def test_validate_api_credentials_rejects_empty_values(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "API_ID"):
+            validate_api_credentials(0, "hash")
+        with self.assertRaisesRegex(RuntimeError, "API_HASH"):
+            validate_api_credentials(1, "")
+
+    def test_build_session_output_contains_secret_warning(self) -> None:
+        output = build_session_output("abc123")
+
+        self.assertIn("TELEGRAM_SESSION", output)
+        self.assertIn("abc123", output)
+        self.assertIn("不要提交", output)
 
 
 if __name__ == "__main__":
