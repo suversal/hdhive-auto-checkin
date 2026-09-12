@@ -7,11 +7,11 @@
 
 ---
 
-> 如果你是为了查看旧版 HDHive 绑定机器人签到方案，可以参考备份文档：[README.hdhive.backup.md](/Users/sue/hdhive-auto-checkin/README.hdhive.md)。
+> 本项目最初是为 HDHive 自动签到编写的，后来升级为通用的 Telegram 自动发消息方案。如果你是为了查看旧版 HDHive 绑定机器人签到说明，可以参考备份文档：[README.hdhive.md](/Users/sue/hdhive-auto-checkin/README.hdhive.md)。
 
 ## 项目介绍
 
-这个项目现在定位为一个通用的 Telegram 自动任务工具。
+这个项目现在定位为一个通用的 Telegram 自动任务工具。它保留了最初 HDHive 自动签到场景里沉淀下来的多账号、定时执行、结果通知能力，但不再把逻辑写死在 HDHive 上。
 
 它不再只绑定某一个站点或某一种签到逻辑，而是做一件更通用的事情：
 
@@ -69,11 +69,11 @@
 4. 根据自己的需求填写表单：
 
 ```text
-App title: HDHive Auto Checkin
-Short name: hdhivecheckin
+App title: Telegram Auto Tasks
+Short name: telegram_auto_tasks
 URL: https://github.com/suversal
 Platform: Desktop
-Description: Personal Telegram automation for HDHive checkin
+Description: Personal Telegram automation
 ```
 <img width="617" height="635" alt="image" src="https://github.com/user-attachments/assets/11cb07ec-3d66-4a62-9467-8a96b7bfa338" />
 
@@ -443,7 +443,7 @@ cron: "23 21 * * *"
 
 旧格式每条配置只能表示一个任务；新格式是一个 Telegram 账号下面挂多个任务，更适合长期维护。
 
-旧版 HDHive 专用说明已经备份到：[README.hdhive.backup.md](/Users/sue/hdhive-auto-checkin/README.hdhive.backup.md)。
+旧版 HDHive 专用说明已经备份到：[README.hdhive.md](/Users/sue/hdhive-auto-checkin/README.hdhive.md)。
 
 ## 常见问题
 
