@@ -20,6 +20,48 @@ def test_execution_preserves_raw_reply_and_does_not_guess_success(ready):
     assert len(ready.factory.sends) == 1
 
 
+def test_task_list_returns_latest_reply_and_does_not_reuse_a_previous_run(ready):
+    task = create_task(ready)
+    db = ready.app.state.db
+    run, _ = db.claim_run(task["id"], "manual")
+    text = "原始回复第一行\n第二行 <b>保持原文</b>"
+    db.update_run(run["id"], status="replied", reply=text, sent=True, sendState="sent")
+    current = ready.client.get("/api/state").json()["tasks"][0]
+    assert current["lastStatus"] == current["lastRun"]["status"] == "replied"
+    assert current["lastRun"]["reply"] == text
+    assert current["lastRun"]["id"] == run["id"]
+    queued, _ = db.claim_run(task["id"], "manual")
+    current = ready.client.get("/api/state").json()["tasks"][0]
+    assert current["lastRun"]["id"] == queued["id"]
+    assert current["lastStatus"] == "queued"
+    assert current["lastRun"]["reply"] == ""
+    assert ready.factory.sends == []
+
+
+def test_task_reply_is_available_even_outside_the_loaded_history_page(ready):
+    from shike.database import new_id
+    db = ready.app.state.db
+    first = create_task(ready)
+    old, _ = db.claim_run(first["id"], "manual")
+    db.update_run(old["id"], status="replied", reply="较早任务的真实回复")
+    other = create_task(ready, name="另一个任务")
+    newer, _ = db.claim_run(other["id"], "manual")
+    db.update_run(newer["id"], status="sent")
+    with db.tx(True) as connection:
+        seed = list(connection.execute("SELECT * FROM runs WHERE id=?", (newer["id"],)).fetchone())
+        rows = []
+        for index in range(201):
+            item = seed.copy()
+            item[0], item[8] = new_id("run"), time.time() + index
+            rows.append(item)
+        connection.executemany("INSERT INTO runs VALUES (?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+    state = ready.client.get("/api/state").json()
+    assert old["id"] not in {run["id"] for run in state["runs"]}
+    task = next(t for t in state["tasks"] if t["id"] == first["id"])
+    assert task["lastRun"]["reply"] == "较早任务的真实回复"
+    assert "logs" not in task["lastRun"]
+
+
 @pytest.mark.parametrize("target,target_type", [("@test_user", "user"), ("me", "self"), ("@testbot", "bot")])
 def test_only_send_needs_no_reply(ready, target, target_type):
     ready.factory.mode = "timeout"  # None of these recipients sends any reply.

@@ -23,6 +23,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--state", choices=("ready", "new", "uninitialized"), default="ready")
     parser.add_argument("--port", type=int, default=8788)
+    parser.add_argument("--with-runs", action="store_true", help="准备不发送消息的合成回复记录")
     args = parser.parse_args()
     data = Path(tempfile.mkdtemp(prefix="shike-ui-check-"))
     vault = Vault(data)
@@ -33,9 +34,13 @@ if __name__ == "__main__":
     if args.state == "ready":
         db.set("telegram_credentials", vault.encrypt(json.dumps({"apiId":12345,"apiHash":"a"*32})))
         account = db.save_account("测试账号 A", 1, {"username":"sample_account","phone":"合成测试数据","letter":"S"}, vault.encrypt("test-session-imported"))
-        for name, target in (("每日签到","@testbot"),("每周备忘","me"),("积分查询","@testbot")):
+        for index, (name, target) in enumerate((("每日签到","@testbot"),("每周备忘","me"),("积分查询","@testbot"))):
             task = TaskInput(name=name, accountId=account["id"], target=target, targetName="发给自己" if target=="me" else "测试机器人", targetType="self" if target=="me" else "bot", steps=[{"type":"send","text":"测试消息"}], notify="none").model_dump(exclude={"revision"})
             following = next_time(task, time.time())
-            db.save_task(task, following, following)
+            saved = db.save_task(task, following, following)
+            if args.with_runs:
+                run, _ = db.claim_run(saved["id"], "manual")
+                reply = "签到成功，获得 5 积分。\n当前积分：150，连续签到：12 天。\n" + "这是一段合成的长回复，用来检查列表内展开和换行。" * 12 if index == 0 else ""
+                db.update_run(run["id"], status=("replied", "sent", "timeout")[index], sent=True, sendState="sent", reply=reply, replies=[{"text":reply,"messageId":1}] if reply else [])
     app = create_app(Config(data, scheduler_interval=.2), client_factory=FakeFactory())
     uvicorn.run(app, host="127.0.0.1", port=args.port, access_log=False)

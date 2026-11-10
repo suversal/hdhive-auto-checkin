@@ -926,6 +926,69 @@ function TaskEditor({ draft, store, actions, onSave, onCancel }) {
     </section>
   );
 }
+function AccountNameDialog({ account, onClose, onSave }) {
+  const [name, setName] = useState(account.name),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false);
+  async function submit(e) {
+    e.preventDefault();
+    if (busy) return;
+    const value = name.trim();
+    if (!value || Array.from(value).length > 30) {
+      setError("请填写 1 到 30 个字符的账号名称。");
+      return;
+    }
+    setError("");
+    setBusy(true);
+    try {
+      await onSave(account.id, value);
+    } catch (e) {
+      setError(e.message);
+      setBusy(false);
+    }
+  }
+  return (
+    <Modal
+      title="编辑账号名称"
+      subtitle="这个名称用于在拾刻中区分账号，Telegram 昵称和用户名保持不变。"
+      onClose={busy ? () => {} : onClose}
+    >
+      <form onSubmit={submit} aria-busy={busy}>
+        <Field
+          label="账号名称"
+          id="account-remark"
+          hint="最多 30 个字符，保存后立即生效。"
+          error={error}
+        >
+          <input
+            id="account-remark"
+            value={name}
+            autoFocus
+            autoComplete="off"
+            maxLength={30}
+            disabled={busy}
+            onChange={(e) => {
+              setName(e.target.value);
+              if (error) setError("");
+            }}
+          />
+        </Field>
+        <div className="modal-footer">
+          <Button type="button" disabled={busy} onClick={onClose}>
+            取消
+          </Button>
+          <Button
+            type="submit"
+            variant="primary"
+            disabled={busy || !name.trim() || name.trim() === account.name}
+          >
+            {busy ? "正在保存…" : "保存名称"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
 function AccountDialog({ account, onClose, onSave }) {
   const [mode, setMode] = useState("qr"),
     [step, setStep] = useState(0),

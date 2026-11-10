@@ -225,12 +225,11 @@ function Overview({ store, actions }) {
             </a>
           </div>
           <div className="panel" style={{ padding: "8px 22px" }}>
-            {runs.slice(0, 2).map((r) => (
-              <button
+            {runs.slice(0, 3).map((r) => (
+              <div
                 className="activity-row"
                 key={r.id}
                 style={{ width: "100%", textAlign: "left" }}
-                onClick={() => actions.openRun(r)}
               >
                 <div
                   className={
@@ -243,14 +242,19 @@ function Overview({ store, actions }) {
                   />
                 </div>
                 <div className="grow">
-                  <p>
-                    {r.taskName}
-                    <span className="muted"> · {STATUS[r.status]?.text}</span>
-                  </p>
-                  <small>{r.reply.slice(0, 38)}</small>
+                  <div className="row wrap">
+                    <button
+                      className="table-name"
+                      onClick={() => actions.openRun(r)}
+                    >
+                      {r.taskName}
+                    </button>
+                    <Badge status={r.status} />
+                  </div>
+                  <ReplyPreview run={r} />
                 </div>
                 <small>{formatAt(r.at, true).split(" ")[1]}</small>
-              </button>
+              </div>
             ))}
           </div>
         </div>
@@ -576,12 +580,12 @@ function AccountsPage({ store, actions }) {
             const n = store.tasks.filter((t) => t.accountId === a.id).length;
             return (
               <article className="panel account-card" key={a.id}>
-                <div className="between">
-                  <div className="row">
+                <div className="between account-heading">
+                  <div className="row account-identity">
                     <span className={"avatar lg " + (i ? "alt" : "")}>
                       {a.letter}
                     </span>
-                    <div>
+                    <div className="account-label">
                       <h2>{a.name}</h2>
                       <span className="muted small">@{a.username}</span>
                     </div>
@@ -623,18 +627,28 @@ function AccountsPage({ store, actions }) {
                     </Notice>
                   </div>
                 )}
-                <div className="between">
-                  <Button
-                    variant={a.status === "connected" ? "" : "primary"}
-                    icon={a.status === "connected" ? "refresh" : "key"}
-                    onClick={() =>
-                      a.status === "invalid"
-                        ? actions.addAccount(a)
-                        : actions.checkAccount(a)
-                    }
-                  >
-                    {a.status === "invalid" ? "重新登录" : "检查连接"}
-                  </Button>
+                <div className="between account-actions">
+                  <div className="row">
+                    <Button
+                      variant={a.status === "connected" ? "" : "primary"}
+                      icon={a.status === "connected" ? "refresh" : "key"}
+                      onClick={() =>
+                        a.status === "invalid"
+                          ? actions.addAccount(a)
+                          : actions.checkAccount(a)
+                      }
+                    >
+                      {a.status === "invalid" ? "重新登录" : "检查连接"}
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      icon="edit"
+                      aria-label={"编辑名称：" + a.name}
+                      onClick={() => actions.renameAccount(a)}
+                    >
+                      编辑名称
+                    </Button>
+                  </div>
                   <button
                     className="text-btn"
                     style={{ color: "var(--muted)", fontSize: 11 }}
@@ -661,7 +675,10 @@ function RunsPage({ store, actions }) {
     [date, setDate] = useState("all");
   const runs = store.runs.filter(
     (r) =>
-      (!q || r.taskName.includes(q)) &&
+      (!q ||
+        [r.taskName, r.reply, r.error].some((text) =>
+          text?.toLowerCase().includes(q.trim().toLowerCase()),
+        )) &&
       (filter === "all" ||
         (filter === "attention"
           ? ["error", "timeout", "failed", "limited", "interrupted"].includes(
@@ -692,7 +709,7 @@ function RunsPage({ store, actions }) {
         <label className="search">
           <Icon name="search" size={15} />
           <input
-            placeholder="搜索任务名称"
+            placeholder="搜索任务、回复或异常原因"
             aria-label="搜索执行记录"
             value={q}
             onChange={(e) => setQ(e.target.value)}

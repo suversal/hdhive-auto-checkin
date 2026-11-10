@@ -139,6 +139,12 @@ class Database:
                 (account_id, name.strip(), str(user_id), json.dumps(profile, ensure_ascii=False), encrypted_session, time.time()))
         return self.account(account_id)
 
+    def rename_account(self, account_id: str, name: str):
+        with self.tx(True) as db:
+            if db.execute("UPDATE accounts SET name=? WHERE id=?", (name, account_id)).rowcount == 0:
+                raise AppError("ACCOUNT_NOT_FOUND", "账号不存在或已移除。", 404)
+            return self.account_row(db.execute("SELECT * FROM accounts WHERE id=?", (account_id,)).fetchone())
+
     def account_status(self, account_id, status, blocked_until=None):
         with self.tx() as db:
             if blocked_until is None:

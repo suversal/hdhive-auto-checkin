@@ -1019,6 +1019,69 @@ td .iconbox {
   color: var(--muted);
   font-size: 11px;
 }
+.task-table,
+.runs-table {
+  table-layout: fixed;
+}
+.task-table th:first-child {
+  width: 30%;
+}
+.task-table th:nth-child(2) {
+  width: 20%;
+}
+.task-table th:nth-child(4) {
+  width: 70px;
+}
+.runs-table th:first-child {
+  width: 24%;
+}
+.runs-table th:nth-child(2) {
+  width: 16%;
+}
+.runs-table th:nth-child(4),
+.runs-table th:nth-child(5) {
+  width: 80px;
+}
+.task-table td,
+.runs-table td {
+  overflow-wrap: anywhere;
+}
+.result-meta {
+  gap: 8px;
+}
+.result-meta .task-meta {
+  margin: 0;
+}
+.reply-preview {
+  margin-top: 10px;
+  padding: 11px 13px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  text-align: left;
+}
+.reply-text {
+  font-size: 12px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.reply-preview.is-expanded .reply-text {
+  max-height: 18rem;
+  overflow-y: auto;
+}
+.reply-expand {
+  padding: 4px 0;
+  min-height: 32px;
+  margin-top: 6px;
+  font-size: 11px;
+}
+.reply-empty {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
 .table-name {
   font-size: 13px;
   font-weight: 550;
@@ -1084,6 +1147,23 @@ td .iconbox {
 .account-card h2 {
   font-size: 16px;
   margin-bottom: 2px;
+  overflow-wrap: anywhere;
+}
+.account-heading .account-identity,
+.account-heading .account-label {
+  min-width: 0;
+}
+.account-heading .account-identity {
+  flex: 1;
+}
+.account-heading .avatar,
+.account-heading .status {
+  flex-shrink: 0;
+}
+.account-actions,
+.account-actions > .row {
+  flex-wrap: wrap;
+  gap: 8px;
 }
 .account-card .account-info {
   border-top: 1px solid var(--line);
@@ -3379,4 +3459,66 @@ kbd {
   right: 8px;
   top: 50%;
   transform: translateY(-50%);
+}
+
+@media (max-width: 760px) {
+  .task-table td.result-cell {
+    display: block;
+    width: auto;
+    margin-top: 12px;
+  }
+  .reply-expand {
+    min-height: 44px;
+  }
+  .runs-table thead {
+    display: none;
+  }
+  .runs-table,
+  .runs-table tbody,
+  .runs-table tr,
+  .runs-table td {
+    display: block;
+  }
+  .runs-table tr {
+    position: relative;
+    padding: 18px;
+    border-top: 1px solid var(--line);
+  }
+  .runs-table tr:first-child {
+    border-top: 0;
+  }
+  .runs-table td {
+    padding: 0;
+    border: 0;
+  }
+  .runs-table td:first-child {
+    min-width: 0;
+    padding-right: 60px;
+  }
+  .runs-table td:nth-child(2) {
+    display: block;
+    margin-top: 5px;
+    color: var(--muted);
+    font-size: 11px;
+  }
+  .runs-table td:nth-child(2)::before {
+    content: "执行账号 · ";
+  }
+  .runs-table td.result-cell {
+    width: auto;
+    margin-top: 12px;
+  }
+  .runs-table td:nth-child(4) {
+    display: block;
+    margin-top: 8px;
+    font-size: 11px;
+  }
+  .runs-table td:nth-child(4)::before {
+    content: "耗时 · ";
+  }
+  .runs-table td:last-child {
+    position: absolute;
+    right: 12px;
+    top: 15px;
+  }
 }

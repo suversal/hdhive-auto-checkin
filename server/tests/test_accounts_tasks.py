@@ -4,6 +4,45 @@ from datetime import UTC, datetime, timedelta
 from conftest import await_run, create_task, task_body
 
 
+def test_account_rename_is_offline_and_preserves_identity_session_tasks_and_history(ready):
+    from shike.database import Database
+    db = ready.app.state.db
+    account_id = ready.account["id"]
+    task = create_task(ready)
+    db.claim_run(task["id"], "manual")
+    before = db.account(account_id, private=True)
+    historical = db.runs()
+    # Renaming a disconnected account must not invoke Telegram or reset its state.
+    db.account_status(account_id, "invalid")
+    ready.factory.mode = "network"
+    response = ready.client.patch(f"/api/accounts/{account_id}", json={"name": "  工作账号 · 中文  "})
+    assert response.status_code == 200, response.text
+    assert response.json()["name"] == "工作账号 · 中文"
+    assert "sessionCipher" not in response.json()
+    assert db.account(account_id, private=True) == {**before, "name": "工作账号 · 中文", "status": "invalid"}
+    assert db.task(task["id"]) == task
+    assert db.runs() == historical
+    assert ready.client.get("/api/state").json()["accounts"][0]["name"] == "工作账号 · 中文"
+    assert Database(ready.config.data_dir).account(account_id)["name"] == "工作账号 · 中文"
+    assert ready.factory.sends == []
+
+
+def test_account_rename_validates_name_and_rejects_changes_to_other_fields(ready):
+    path = f"/api/accounts/{ready.account['id']}"
+    for body in ({"name": ""}, {"name": " \t\n"}, {"name": "长" * 31}, {"name": "名称", "status": "invalid"}):
+        assert ready.client.patch(path, json=body).status_code == 422
+    assert ready.app.state.db.account(ready.account["id"])["name"] == "主账号"
+    assert ready.client.patch("/api/accounts/does-not-exist", json={"name": "名称"}).status_code == 404
+
+
+def test_account_rename_requires_login_and_csrf(ready):
+    path = f"/api/accounts/{ready.account['id']}"
+    assert ready.client.patch(path, json={"name": "名称"}, headers={"X-CSRF-Token": "wrong"}).status_code == 403
+    ready.client.cookies.clear()
+    assert ready.client.patch(path, json={"name": "名称"}).status_code == 401
+    assert ready.app.state.db.account(ready.account["id"])["name"] == "主账号"
+
+
 def test_account_import_encrypts_session_and_omits_secrets(ready):
     state = ready.client.get("/api/state").json()
     assert len(state["accounts"]) == 1

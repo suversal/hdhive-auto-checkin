@@ -132,6 +132,18 @@ class LoginInput(Model):
     password: str = Field(min_length=1, max_length=1024)
 
 
+class AccountNameInput(Model):
+    name: str = Field(min_length=1, max_length=30)
+
+    @field_validator("name")
+    @classmethod
+    def nonblank(cls, value):
+        value = value.strip()
+        if not value:
+            raise ValueError("请填写账号名称")
+        return value
+
+
 class ApiCredentials(Model):
     apiId: int = Field(gt=0)
     apiHash: str = Field(pattern=r"^[a-fA-F0-9]{32}$")

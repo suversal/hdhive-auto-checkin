@@ -341,6 +341,61 @@ function TaskMenu({ task, onEdit, onCopy, onDelete, onExport }) {
     </Menu>
   );
 }
+function ReplyPreview({ run }) {
+  const [expanded, setExpanded] = useState(false),
+    contentId = React.useId();
+  useEffect(() => setExpanded(false), [run?.id]);
+  if (!run) return null;
+  const text = run.status === "skipped" ? "" : run.reply || "",
+    characters = Array.from(text),
+    truncated = characters.length > 140 || text.split("\n").length > 3,
+    preview = text.split("\n").slice(0, 3).join("\n"),
+    shortened = Array.from(preview).slice(0, 140).join("");
+  if (!text) {
+    const label =
+      run.status === "sent"
+        ? "本次只发送消息，无需等待回复"
+        : run.status === "running"
+          ? "执行中，回复会在这里更新"
+          : run.status === "queued"
+            ? "任务排队中，还没有回复"
+            : run.status === "timeout"
+              ? run.sent
+                ? "已发送，等待回复超时"
+                : "执行超时，未收到回复"
+              : run.status === "skipped"
+                ? "错过计划，未发送消息"
+                : run.status === "cancelled"
+                  ? "执行已取消，暂无回复"
+                  : run.status === "interrupted"
+                    ? "执行中断，暂无回复"
+                    : run.error || "暂无回复";
+    return <p className="reply-empty">{label}</p>;
+  }
+  return (
+    <div className={"reply-preview" + (expanded ? " is-expanded" : "")}>
+      <div
+        id={contentId}
+        className="reply-text"
+        tabIndex={expanded ? 0 : undefined}
+      >
+        {expanded || !truncated ? text : shortened + "…"}
+      </div>
+      {truncated && (
+        <button
+          type="button"
+          className="text-btn reply-expand"
+          aria-expanded={expanded}
+          aria-controls={contentId}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? "收起回复" : "展开全文"}
+          <Icon name={expanded ? "up" : "down"} size={12} />
+        </button>
+      )}
+    </div>
+  );
+}
 function TaskList({
   tasks,
   accounts,
@@ -387,6 +442,7 @@ function TaskList({
               {t.targetName || t.target} <span aria-hidden="true">·</span>{" "}
               {scheduleLabel(t)}
             </div>
+            <ReplyPreview run={t.lastRun} />
           </div>
           <IconButton
             name="play"
@@ -426,7 +482,7 @@ function TaskList({
               </div>
             </th>
             <th>执行时间</th>
-            <th>最近执行</th>
+            <th>最近执行 / 回复</th>
             <th>启用</th>
             <th style={{ width: 100 }}>操作</th>
           </tr>
@@ -486,12 +542,20 @@ function TaskList({
                 {scheduleLabel(t)}
                 <div className="task-meta">{t.timezone}</div>
               </td>
-              <td>
+              <td className="result-cell">
                 {t.lastStatus ? (
-                  <Badge status={t.lastStatus} />
+                  <div className="row wrap result-meta">
+                    <Badge status={t.lastStatus} />
+                    {t.lastRun && (
+                      <span className="task-meta">
+                        {formatAt(t.lastRun.at, true)}
+                      </span>
+                    )}
+                  </div>
                 ) : (
                   <span className="muted small">还没有执行</span>
                 )}
+                <ReplyPreview run={t.lastRun} />
               </td>
               <td>
                 <Toggle
@@ -531,7 +595,7 @@ function RunsTable({ runs, accounts, onOpen }) {
           <tr>
             <th>任务 / 执行时间</th>
             <th>执行账号</th>
-            <th>结果</th>
+            <th>结果 / 原始回复</th>
             <th>耗时</th>
             <th>详情</th>
           </tr>
@@ -548,8 +612,9 @@ function RunsTable({ runs, accounts, onOpen }) {
               <td>
                 {accounts.find((a) => a.id === r.accountId)?.name || "历史账号"}
               </td>
-              <td>
+              <td className="result-cell">
                 <Badge status={r.status} />
+                <ReplyPreview run={r} />
               </td>
               <td className="muted">{r.duration}</td>
               <td>

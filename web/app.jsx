@@ -214,6 +214,18 @@ function App() {
     }
     notify("Telegram 账号已接入");
   }
+  async function saveAccountName(accountId, name) {
+    const account = await api("/accounts/" + accountId, {
+      method: "PATCH",
+      body: { name },
+    });
+    setStore((s) => ({
+      ...s,
+      accounts: s.accounts.map((a) => (a.id === accountId ? account : a)),
+    }));
+    setModal(null);
+    notify("账号名称已更新");
+  }
   function beginEdit(data) {
     const enter = () => {
       setDraft(data);
@@ -426,6 +438,7 @@ function App() {
     },
     create,
     addAccount,
+    renameAccount: (account) => setModal({ type: "accountName", account }),
     removeAccount,
     checkAccount,
     toast: notify,
@@ -687,6 +700,13 @@ function App() {
           account={modal.account}
           onClose={() => setModal(null)}
           onSave={saveAccount}
+        />
+      )}
+      {modal?.type === "accountName" && (
+        <AccountNameDialog
+          account={modal.account}
+          onClose={() => setModal(null)}
+          onSave={saveAccountName}
         />
       )}
       {modal?.type === "run" && (

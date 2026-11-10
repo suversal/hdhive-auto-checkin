@@ -24,7 +24,7 @@ from .config import Config
 from .database import Database, iso, new_id
 from .errors import AppError
 from .models import (
-    ApiCredentials, LoginCode, LoginInput, Model, PasswordChange, PasswordInput,
+    AccountNameInput, ApiCredentials, LoginCode, LoginInput, Model, PasswordChange, PasswordInput,
     PhoneLogin, QRStart, SessionImport, SettingsInput, TaskInput,
 )
 from .runner import Runner
@@ -235,8 +235,17 @@ def create_app(config: Config | None = None, *, client_factory=None) -> FastAPI:
         midnight = datetime.now(zone).replace(hour=0,minute=0,second=0,microsecond=0).timestamp()
         with db().tx() as connection:
             for task in tasks:
-                latest = connection.execute("SELECT status FROM runs WHERE task_id=? ORDER BY created DESC,rowid DESC LIMIT 1", (task["id"],)).fetchone()
-                task["lastStatus"] = latest[0] if latest else None
+                latest = connection.execute("SELECT id,status,created,result FROM runs WHERE task_id=? ORDER BY created DESC,rowid DESC LIMIT 1", (task["id"],)).fetchone()
+                task["lastStatus"] = latest["status"] if latest else None
+                task["lastRun"] = None
+                if latest:
+                    result = json.loads(latest["result"])
+                    task["lastRun"] = {
+                        "id": latest["id"], "status": latest["status"], "at": iso(latest["created"]),
+                        "reply": result.get("reply", ""), "sent": result.get("sent", False),
+                        "error": result.get("error", ""),
+                        "sendState": result.get("sendState", "not_sent"),
+                    }
             counts = {r[0]: r[1] for r in connection.execute("SELECT status,COUNT(*) FROM runs WHERE created>=? GROUP BY status", (midnight,))}
         summary = {"todayExecuted": sum(n for status,n in counts.items() if status not in ("queued","running","skipped")), "attention": sum(counts.get(status,0) for status in ("error","failed","timeout","limited","interrupted"))}
         return {"settings": settings, "tasks": tasks, "accounts": db().accounts(), "runs": runs, "serverTime": iso(), "version": __version__, "summary": summary, "adapter": "telegram" if client_factory is None else "test"}
@@ -324,6 +333,10 @@ def create_app(config: Config | None = None, *, client_factory=None) -> FastAPI:
     @app.get("/api/accounts")
     async def accounts(current=Depends(auth)):
         return db().accounts()
+
+    @app.patch("/api/accounts/{account_id}")
+    async def rename_account(account_id: str, body: AccountNameInput, current=Depends(auth)):
+        return db().rename_account(account_id, body.name)
 
     @app.post("/api/accounts/{account_id}/check")
     async def check_account(account_id: str, current=Depends(auth)):
