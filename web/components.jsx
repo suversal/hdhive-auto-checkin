@@ -341,59 +341,68 @@ function TaskMenu({ task, onEdit, onCopy, onDelete, onExport }) {
     </Menu>
   );
 }
+function replyPlaceholder(run) {
+  if (!run) return "—";
+  if (run.status === "sent") return "本次只发送消息，无需等待回复";
+  if (run.status === "running") return "执行中，回复会在这里更新";
+  if (run.status === "queued") return "任务排队中，还没有回复";
+  if (run.status === "timeout")
+    return run.sent ? "已发送，等待回复超时" : "执行超时，未收到回复";
+  if (run.status === "skipped") return "错过计划，未发送消息";
+  if (run.status === "cancelled") return "执行已取消，暂无回复";
+  if (run.status === "interrupted") return "执行中断，暂无回复";
+  return run.error || "暂无回复";
+}
 function ReplyPreview({ run }) {
-  const [expanded, setExpanded] = useState(false),
-    contentId = React.useId();
-  useEffect(() => setExpanded(false), [run?.id]);
-  if (!run) return null;
-  const text = run.status === "skipped" ? "" : run.reply || "",
-    characters = Array.from(text),
-    truncated = characters.length > 140 || text.split("\n").length > 3,
-    preview = text.split("\n").slice(0, 3).join("\n"),
-    shortened = Array.from(preview).slice(0, 140).join("");
-  if (!text) {
-    const label =
-      run.status === "sent"
-        ? "本次只发送消息，无需等待回复"
-        : run.status === "running"
-          ? "执行中，回复会在这里更新"
-          : run.status === "queued"
-            ? "任务排队中，还没有回复"
-            : run.status === "timeout"
-              ? run.sent
-                ? "已发送，等待回复超时"
-                : "执行超时，未收到回复"
-              : run.status === "skipped"
-                ? "错过计划，未发送消息"
-                : run.status === "cancelled"
-                  ? "执行已取消，暂无回复"
-                  : run.status === "interrupted"
-                    ? "执行中断，暂无回复"
-                    : run.error || "暂无回复";
-    return <p className="reply-empty">{label}</p>;
-  }
+  const element = useRef(null),
+    [overflow, setOverflow] = useState(false),
+    [open, setOpen] = useState(false),
+    text = run?.status === "skipped" ? "" : run?.reply || "",
+    value = text || replyPlaceholder(run);
+  useEffect(() => {
+    const node = element.current;
+    const measure = () => setOverflow(node.scrollWidth > node.clientWidth + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [value]);
+  useEffect(() => setOpen(false), [run?.id, value]);
   return (
-    <div className={"reply-preview" + (expanded ? " is-expanded" : "")}>
-      <div
-        id={contentId}
-        className="reply-text"
-        tabIndex={expanded ? 0 : undefined}
-      >
-        {expanded || !truncated ? text : shortened + "…"}
-      </div>
-      {truncated && (
+    <TooltipPrimitive.Root
+      open={overflow && open}
+      onOpenChange={setOpen}
+      delayDuration={180}
+    >
+      <TooltipPrimitive.Trigger asChild>
         <button
+          ref={element}
           type="button"
-          className="text-btn reply-expand"
-          aria-expanded={expanded}
-          aria-controls={contentId}
-          onClick={() => setExpanded(!expanded)}
+          className={"reply-value" + (!text ? " is-empty" : "")}
+          disabled={!overflow}
+          onClick={(e) => {
+            e.preventDefault();
+            setOpen(!open);
+          }}
         >
-          {expanded ? "收起回复" : "展开全文"}
-          <Icon name={expanded ? "up" : "down"} size={12} />
+          {value}
         </button>
+      </TooltipPrimitive.Trigger>
+      {overflow && (
+        <TooltipPrimitive.Portal>
+          <TooltipPrimitive.Content
+            className="reply-tooltip"
+            side="top"
+            align="start"
+            sideOffset={8}
+            collisionPadding={16}
+          >
+            {value}
+            <TooltipPrimitive.Arrow className="reply-tooltip-arrow" />
+          </TooltipPrimitive.Content>
+        </TooltipPrimitive.Portal>
       )}
-    </div>
+    </TooltipPrimitive.Root>
   );
 }
 function TaskList({
@@ -482,7 +491,8 @@ function TaskList({
               </div>
             </th>
             <th>执行时间</th>
-            <th>最近执行 / 回复</th>
+            <th>最近执行</th>
+            <th>回复内容</th>
             <th>启用</th>
             <th style={{ width: 100 }}>操作</th>
           </tr>
@@ -555,6 +565,8 @@ function TaskList({
                 ) : (
                   <span className="muted small">还没有执行</span>
                 )}
+              </td>
+              <td className="reply-cell">
                 <ReplyPreview run={t.lastRun} />
               </td>
               <td>
@@ -595,7 +607,8 @@ function RunsTable({ runs, accounts, onOpen }) {
           <tr>
             <th>任务 / 执行时间</th>
             <th>执行账号</th>
-            <th>结果 / 原始回复</th>
+            <th>结果</th>
+            <th>回复内容</th>
             <th>耗时</th>
             <th>详情</th>
           </tr>
@@ -614,6 +627,8 @@ function RunsTable({ runs, accounts, onOpen }) {
               </td>
               <td className="result-cell">
                 <Badge status={r.status} />
+              </td>
+              <td className="reply-cell">
                 <ReplyPreview run={r} />
               </td>
               <td className="muted">{r.duration}</td>

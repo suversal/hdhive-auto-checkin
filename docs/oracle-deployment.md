@@ -6,8 +6,8 @@
 
 - 目标：SSH 别名 `oracle-blog`，ARM64 Linux。
 - 入口：`https://shike.suversal.com/`。
-- 应用提交：`a7ab6d9cd17ad82ee2a48c9c761359c3eed19bc7`，版本 `0.1.0`。
-- 构建方式：从已提交源码在服务器构建，镜像为 `ghcr.io/suversal/hdhive-auto-checkin:local-a7ab6d9`。这个标签仅存在于服务器，不表示已向 GHCR 发布。
+- 当前应用提交以服务器 `/home/ubuntu/shike/DEPLOYED_COMMIT` 为准，版本 `0.1.0`。
+- 构建方式：从已提交源码在服务器构建，当前镜像记录在 `.env` 的 `SHIKE_IMAGE`。`local-提交号` 标签仅存在于服务器，不表示已向 GHCR 发布。
 - 目录：`/home/ubuntu/shike`；独立 Compose 项目 `shike`、数据卷 `shike_shike-data`。
 - 后端仅监听 `127.0.0.1:8787`；`.env` 的公开来源为 `https://shike.suversal.com`，Secure Cookie 开启。
 - 按用户选择新建空实例，未迁移本机账号、任务、记录或管理密码。验收时账号、任务和记录均为 0。
