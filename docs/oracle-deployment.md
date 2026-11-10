@@ -6,8 +6,8 @@
 
 - 目标：SSH 别名 `oracle-blog`，ARM64 Linux。
 - 入口：`https://shike.suversal.com/`。
-- 应用提交：`4b19fcd51e69f1a8ae6a52b9d86f03debf481d18`，版本 `0.1.0`。
-- 构建方式：从已提交源码在服务器构建，镜像为 `ghcr.io/suversal/hdhive-auto-checkin:local-4b19fcd`。这个标签仅存在于服务器，不表示已向 GHCR 发布。
+- 应用提交：`4bdd0b59495606058e2e673918985ca503577a5a`，版本 `0.1.0`。
+- 构建方式：从已提交源码在服务器构建，镜像为 `ghcr.io/suversal/hdhive-auto-checkin:local-4bdd0b5`。这个标签仅存在于服务器，不表示已向 GHCR 发布。
 - 目录：`/home/ubuntu/shike`；独立 Compose 项目 `shike`、数据卷 `shike_shike-data`。
 - 后端仅监听 `127.0.0.1:8787`；`.env` 的公开来源为 `https://shike.suversal.com`，Secure Cookie 开启。
 - 按用户选择新建空实例，未迁移本机账号、任务、记录或管理密码。验收时账号、任务和记录均为 0。
@@ -60,9 +60,15 @@ sudo -n sh shike.sh upgrade 实际版本号
 
 - 服务通过 Docker 健康检查，非 root 用户 UID 10001 运行。
 - 数据目录权限 700，加密密钥文件权限 600。
-- 新站点源站 HTTPS 健康接口返回 200，公网首页、健康接口、JS 和 CSS 均为 200，未登录读取 `/api/state` 为 401，HTTP 自动跳转 HTTPS；公网 Chrome 正常加载首次设置界面。
+- 公网 HTTPS 健康接口返回 200，Chrome 正常加载新版单密码登录页。源站未登录读取 `/api/state`、`/api/settings` 为 401，公开初始化和注册接口均为 404；首页与三项带内容版本标记的静态资源通过 SHA256 对照。
 - Telegram 默认数据中心 TCP 连接可达；未配置真实账号，因此没有执行 Telegram 登录或发送消息。
 - 现有 13 个容器的 ID 和启动时间均保持不变，没有触发 AIRadar / SourcePilot 采集或其他业务任务。
 - 首次构建发现私有源码归档权限导致应用文件不可读，已通过 Dockerfile 固定代码可读权限解决；CI 增加严格源码权限场景，修复后的 GitHub CI 全部通过。
 
 这里只完成部署和登录入口交付，管理密码、Telegram API 配置、扫码和实号发送由用户后续完成。未创建正式 Release，也未将本地账号数据上传服务器。
+
+## 取消首次设置口令后的更新
+
+应用提交 `4bdd0b5` 已备份升级。升级前备份目录为 `/home/ubuntu/shike/backups/20261110T134436Z-3933276`，原数据卷、加密密钥权限及已有服务运行状态保持不变。验收时管理员仍未创建，账号、任务、活动执行均为 0，维护模式已退出。用户选择自己在服务器终端创建管理密码，命令见“首次使用”。
+
+[该提交的 GitHub CI](https://github.com/suversal/hdhive-auto-checkin/actions/runs/42827094139) 的 service、legacy、docker 三项全部通过。服务器仍使用本地源码镜像，未创建公开 Release。
