@@ -467,8 +467,16 @@ function TaskList({
       ))}
     </>
   ) : (
-    <div className="table-wrap">
+    <div className="table-wrap data-table">
       <table className="task-table">
+        <colgroup>
+          <col className="column-task" />
+          <col className="column-schedule" />
+          <col className="column-result" />
+          <col className="column-reply" />
+          <col className="column-toggle" />
+          <col className="column-actions" />
+        </colgroup>
         <thead>
           <tr>
             <th>
@@ -494,7 +502,7 @@ function TaskList({
             <th>最近执行</th>
             <th>回复内容</th>
             <th>启用</th>
-            <th style={{ width: 100 }}>操作</th>
+            <th className="actions-heading">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -503,7 +511,7 @@ function TaskList({
               key={t.id}
               data-selected={selectedIds?.includes(t.id) || undefined}
             >
-              <td>
+              <td className="task-identity-cell">
                 <div className="row">
                   {selectedIds && (
                     <CheckControl
@@ -548,7 +556,7 @@ function TaskList({
                   </div>
                 </div>
               </td>
-              <td>
+              <td className="schedule-cell">
                 {scheduleLabel(t)}
                 <div className="task-meta">{t.timezone}</div>
               </td>
@@ -569,15 +577,15 @@ function TaskList({
               <td className="reply-cell">
                 <ReplyPreview run={t.lastRun} />
               </td>
-              <td>
+              <td className="toggle-cell">
                 <Toggle
                   label={"启用 " + t.name}
                   checked={t.enabled}
                   onChange={(v) => onToggle(t.id, v)}
                 />
               </td>
-              <td>
-                <div className="row gap-8">
+              <td className="actions-cell">
+                <div className="row gap-8 table-actions">
                   <IconButton
                     name="play"
                     label={"执行 " + t.name}
@@ -601,8 +609,16 @@ function TaskList({
 }
 function RunsTable({ runs, accounts, onOpen }) {
   return (
-    <div className="table-wrap">
+    <div className="table-wrap data-table">
       <table className="runs-table">
+        <colgroup>
+          <col className="column-task" />
+          <col className="column-account" />
+          <col className="column-result" />
+          <col className="column-reply" />
+          <col className="column-duration" />
+          <col className="column-actions" />
+        </colgroup>
         <thead>
           <tr>
             <th>任务 / 执行时间</th>
@@ -610,19 +626,19 @@ function RunsTable({ runs, accounts, onOpen }) {
             <th>结果</th>
             <th>回复内容</th>
             <th>耗时</th>
-            <th>详情</th>
+            <th className="actions-heading">详情</th>
           </tr>
         </thead>
         <tbody>
           {runs.map((r) => (
             <tr key={r.id}>
-              <td>
+              <td className="task-identity-cell">
                 <button className="table-name" onClick={() => onOpen(r)}>
                   {r.taskName}
                 </button>
                 <div className="task-meta">{formatAt(r.at)}</div>
               </td>
-              <td>
+              <td className="account-cell">
                 {accounts.find((a) => a.id === r.accountId)?.name || "历史账号"}
               </td>
               <td className="result-cell">
@@ -631,9 +647,13 @@ function RunsTable({ runs, accounts, onOpen }) {
               <td className="reply-cell">
                 <ReplyPreview run={r} />
               </td>
-              <td className="muted">{r.duration}</td>
-              <td>
-                <Button variant="ghost sm" onClick={() => onOpen(r)}>
+              <td className="muted duration-cell">{r.duration}</td>
+              <td className="actions-cell">
+                <Button
+                  className="record-detail-button"
+                  variant="ghost sm"
+                  onClick={() => onOpen(r)}
+                >
                   查看
                   <Icon name="chevron" size={13} />
                 </Button>

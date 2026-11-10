@@ -715,7 +715,7 @@ function RunsPage({ store, actions }) {
             onChange={(e) => setQ(e.target.value)}
           />
         </label>
-        <div className="row">
+        <div className="row run-filters">
           <SelectControl
             aria-label="按执行结果筛选"
             className="select-filter"
