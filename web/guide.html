@@ -1,0 +1,10 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>使用与部署说明 · 拾刻</title><link rel="stylesheet" href="/assets/styles.css"></head>
+<body><main class="content" style="max-width:850px;padding-top:52px"><a href="/" class="text-btn">← 返回拾刻</a><h1 class="mt-24">从第一条任务开始。</h1><p class="muted mt-8">拾刻使用和运行说明</p>
+<section class="panel panel-pad mt-32"><h2>首次设置</h2><p class="mt-16">本机使用 <code>python -m shike serve --open</code> 启动，会自动打开专属设置入口，直接设置管理密码。已启动时可运行 <code>python -m shike open</code>。</p><p class="mt-16">Docker 可运行 <code>docker compose exec shike python -m shike setup-link</code>，打开命令提供的初始化链接。首次初始化完成后，日常只需输入管理密码。</p></section>
+<section class="panel panel-pad mt-24"><h2>接入 Telegram</h2><ol class="mt-16"><li>在 <a href="https://my.telegram.org/apps" target="_blank" rel="noopener noreferrer" class="text-btn">my.telegram.org/apps</a> 创建应用，获得 API ID 和 API Hash。</li><li>在设置中配置连接信息。若服务器不能直连，可保存代理后测试连接。</li><li>添加账号，点击生成二维码，在手机 Telegram 的“设置 → 设备 → 连接桌面设备”中扫描。</li><li>账号开启两步验证时，继续输入该密码；也可使用手机号验证码或导入已有会话。</li></ol><p class="mini-note mt-16">验证码和两步验证密码不落盘，登录会话在服务器加密保存。二维码和会话都是登录凭证，只在自己的实例操作。</p></section>
+<section class="panel panel-pad mt-24"><h2>安排任务</h2><p class="mt-16">先选择执行账号，再选择目标会话。按顺序添加发送、等待回复、点击按钮步骤，最后选择时间和时区。</p><p class="mt-16">保存计划不会立即发送。立即执行时，页面会先显示真实发送内容供你确认。群提醒可以只发送消息，不必等待回复。</p></section>
+<section class="panel panel-pad mt-24"><h2>读懂执行结果</h2><p class="mt-16">“已收到回复”仅表示目标返回消息，不推断签到是否成功。只有配置的关键词命中，才进一步显示业务判定。</p><p class="mt-16">消息已经发送但等待超时，或者显示“发送结果未确认”时，请先查看 Telegram 会话。不要直接重复执行。服务不会在重启后自动重发不确定的操作。</p></section>
+<section class="panel panel-pad mt-24"><h2>保持运行与维护</h2><p class="mt-16">关闭浏览器不影响任务。部署服务必须保持运行，错过的历史计划默认跳过，恢复后继续后续计划。同一数据目录只运行一个服务进程。</p><p class="mt-16">备份应停止服务后复制完整数据目录，同时保留数据库和加密密钥。Docker 升级保留原数据卷，不要执行带 <code>-v</code> 的删除卷命令。</p><p class="mt-16">忘记管理密码时，实例所有者可停止服务并运行 <code>python -m shike reset-password</code>。</p></section>
+</main></body></html>

@@ -1,0 +1,29 @@
+services:
+  shike:
+    environment:
+      SHIKE_PUBLIC_URL: https://${SHIKE_DOMAIN:?请在 .env 中填写 SHIKE_DOMAIN}
+      SHIKE_COOKIE_SECURE: "1"
+  caddy:
+    image: caddy:2.11.9-alpine
+    restart: unless-stopped
+    environment:
+      SHIKE_DOMAIN: ${SHIKE_DOMAIN:?请在 .env 中填写 SHIKE_DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      shike:
+        condition: service_healthy
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  caddy-data:
+  caddy-config:

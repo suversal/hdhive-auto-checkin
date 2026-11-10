@@ -1,0 +1,28 @@
+services:
+  shike:
+    image: ${SHIKE_IMAGE:-ghcr.io/suversal/hdhive-auto-checkin:latest}
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 45s
+    ports:
+      - "${SHIKE_BIND_ADDRESS:-127.0.0.1}:${SHIKE_PORT:-8787}:8787"
+    environment:
+      SHIKE_DATA_DIR: /data
+      SHIKE_PUBLIC_URL: "${SHIKE_PUBLIC_URL:-}"
+      SHIKE_COOKIE_SECURE: "${SHIKE_COOKIE_SECURE:-0}"
+      SHIKE_SECRET_KEY: "${SHIKE_SECRET_KEY:-}"
+      SHIKE_SETUP_TOKEN: "${SHIKE_SETUP_TOKEN:-}"
+    volumes:
+      - shike-data:/data
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  shike-data:

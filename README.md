@@ -5,6 +5,15 @@
   <br/>
 </div>
 
+## 选择使用方式
+
+| 方式 | 适合谁 | 开始使用 |
+| --- | --- | --- |
+| GitHub Actions 入门版 | 只需要定时运行脚本，不需要常驻网页 | 继续阅读本文 |
+| 拾刻 Docker 完整版 | 想用浏览器扫码接入账号、配置任务、查看记录 | [完整版介绍](README.shike.md) · [小白安装与升级指南](docs/docker-deployment.md) |
+
+两种方案独立使用，原有脚本配置和签到工作流保持不变。
+
 ---
 
 > 本项目最初是为 HDHive 自动签到编写的，后来升级为通用的 Telegram 自动发消息方案。如果你是为了查看旧版 HDHive 绑定机器人签到说明，可以参考备份文档：[README.hdhive.md](/Users/sue/hdhive-auto-checkin/README.hdhive.md)。

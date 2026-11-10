@@ -1,0 +1,6 @@
+services:
+  shike:
+    image: ${SHIKE_IMAGE:-shike:local}
+    build:
+      context: .
+      dockerfile: Dockerfile.shike

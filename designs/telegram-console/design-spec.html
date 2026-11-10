@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>拾刻 · 交互与视觉设计说明</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body{background:#f9faf6}.spec{max-width:1100px;margin:auto;padding:64px 40px 100px}.spec-head{padding-bottom:48px;border-bottom:1px solid var(--line)}.spec-head h1{font-size:48px;font-weight:550;margin:15px 0 20px;letter-spacing:-2px}.spec-head p{font-size:15px;max-width:680px;color:var(--muted);line-height:1.9}.spec-nav{display:flex;flex-wrap:wrap;gap:10px;margin:25px 0}.spec-nav a{font-size:11px;padding:7px 11px;background:var(--soft);border-radius:6px}.spec section{padding-top:56px;scroll-margin-top:25px}.chapter{font-size:10px;letter-spacing:2px;color:var(--muted);margin-bottom:10px}.spec section>h2{font-size:26px;margin-bottom:15px;font-weight:550}.spec section>p{font-size:14px;color:var(--muted);margin-bottom:22px;line-height:1.9}.spec-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}.spec-card{background:white;border:1px solid var(--line);border-radius:12px;padding:23px}.spec-card h3{margin-bottom:10px;font-size:14px}.spec-card p,.spec-card li{font-size:12px;color:var(--muted);line-height:1.9}.spec ul,.spec ol{padding-left:18px}.spec li{margin:5px 0}.spec table{background:white}.spec td{font-size:12px;line-height:1.85;vertical-align:top}.spec th{font-size:12px}.spec td:first-child{white-space:nowrap;font-weight:550}.flow{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:#edf2e7;padding:25px;border-radius:12px;border:1px solid #e0e7d8}.flow span{font-size:12px;background:white;border:1px solid #dce5d4;padding:10px 16px;border-radius:7px}.flow b{color:var(--muted);font-size:15px;font-weight:400}.flow-label{font-size:13px;font-weight:600;margin:25px 0 11px}.swatches{display:grid;grid-template-columns:repeat(6,1fr);gap:12px}.swatch{border:1px solid var(--line);border-radius:10px;overflow:hidden;background:white}.swatch .color{height:75px}.swatch p{padding:10px;font-size:11px}.swatch small{display:block;color:var(--muted);font-size:10px}.spec-callout{border:1px solid #dfcba8;background:#fbf5e9;border-radius:12px;padding:24px;font-size:13px;line-height:1.9;color:#755a2e}.spec-rule{border-left:2px solid var(--accent);padding:6px 0 6px 18px;margin-top:20px;color:var(--accent);font-size:16px}.spec h4{margin:24px 0 10px}.spec code{font-size:11px;background:var(--soft);padding:2px 5px;border-radius:4px}.spec footer{font-size:11px;color:var(--muted);border-top:1px solid var(--line);margin-top:60px;padding-top:25px}.state-list{display:grid;grid-template-columns:1fr 1fr;gap:15px}.state-list>div{padding:18px;background:white;border:1px solid var(--line);border-radius:9px}.state-list h3{font-size:13px;margin:8px 0}.state-list p{font-size:12px;color:var(--muted)}.spec .table-wrap{margin-top:18px}.small-preview{border:1px solid var(--line);border-radius:10px;padding:22px;background:white}.spec a:not(.btn):hover{text-decoration:underline}.spec-stamp{display:inline-flex;font-size:10px;padding:5px 9px;border:1px solid var(--line);border-radius:6px;color:var(--muted);margin-bottom:20px}.spec-footlinks{display:flex;gap:12px;margin-top:24px}
+    @media(max-width:760px){.spec{padding:30px 20px 60px}.spec-head h1{font-size:33px}.spec-grid,.state-list{grid-template-columns:1fr}.spec section{padding-top:40px}.spec section>h2{font-size:23px}.swatches{grid-template-columns:repeat(3,1fr)}.spec td:first-child{white-space:normal;min-width:90px}.flow{padding:18px;gap:8px}.flow span{padding:8px 11px;font-size:11px}.spec-footlinks{flex-wrap:wrap}}@media print{.spec{max-width:none;padding:0}.spec-nav,.spec-footlinks{display:none}.spec section{break-inside:avoid}.spec-head h1{font-size:36px}body{background:white}}
+  </style>
+</head>
+<body>
+<main class="spec">
+  <header class="spec-head">
+    <div class="spec-stamp">产品交互与视觉设计 · V1 · 2026.11.09</div>
+    <div class="eyebrow">SHIKE / PRODUCT DESIGN</div>
+    <h1>给重复的小事，<br>安排一个好时间。</h1>
+    <p>拾刻（暂定名）是一个开源、自部署的 Telegram 自动任务工具。设计围绕一个简单的问题展开：用哪个账号，在什么时间，向哪个会话，做哪件事。</p>
+    <div class="spec-footlinks"><a class="btn primary" href="index.html#overview">进入交互原型 →</a><a class="btn" href="index.html#setup">体验首次设置</a><a class="btn" href="index.html#new">体验创建任务</a></div>
+    <nav class="spec-nav" aria-label="文档目录"><a href="#principles">产品原则</a><a href="#pages">页面结构</a><a href="#flows">核心流程</a><a href="#editor">任务配置</a><a href="#states">状态与异常</a><a href="#visual">视觉规范</a><a href="#responsive">响应式与可访问性</a><a href="#delivery">开发交接</a></nav>
+  </header>
+  <section id="principles" data-screen-label="设计说明 · 产品原则">
+    <div class="chapter">01 / PRODUCT PRINCIPLES</div><h2>把复杂留在系统里，把选择留给用户。</h2>
+    <p>产品范围：单管理员、多 Telegram 账号、自己的服务器或 NAS。现有 GitHub Actions 脚本继续作为独立入门方案。当前交付是前端交互原型，尚未连接真实 Telegram、服务端调度或认证。</p>
+    <div class="spec-grid"><article class="spec-card"><h3>先让第一条任务跑起来</h3><p>不在首页展示技术配置。新用户先接入账号，再选择模板；时间、通知和重试使用清晰默认值。高级功能在需要时展开。</p></article><article class="spec-card"><h3>动作说人话</h3><p>使用“执行账号”“目标会话”“消息内容”“什么时候执行”。Cron、代理、StringSession 都有明确入口，避免成为必填门槛。</p></article><article class="spec-card"><h3>结果有证据</h3><p>执行状态与业务判定分开。“收到回复”不等于“签到成功”。失败解释发生在记录详情里，并给出下一步行动。</p></article></div>
+    <div class="spec-rule">最重要的体验：新用户能独立创建第一条任务，并读懂它的执行结果。</div>
+  </section>
+  <section id="pages" data-screen-label="设计说明 · 信息架构">
+    <div class="chapter">02 / INFORMATION ARCHITECTURE</div><h2>页面少一点，路径清楚一点。</h2>
+    <p>日常导航只有概览、任务、账号、记录、模板。设置和帮助保持次级位置。登录和首次设置使用独立布局，任务编辑使用完整页面，短操作使用弹窗，执行详情使用侧边抽屉。</p>
+    <div class="table-wrap"><table><thead><tr><th>页面 / 路由</th><th>用户要解决的问题</th><th>主要内容与行为</th></tr></thead><tbody>
+      <tr><td>首次设置<br><code>#setup</code></td><td>我如何开始？</td><td>设置空间名称和管理密码 → 填写 Telegram API 信息 → 添加账号 → 选择首个模板。允许暂时跳过添加账号，随时返回空间。</td></tr>
+      <tr><td>登录<br><code>#login</code></td><td>如何安全进入面板？</td><td>单一管理密码，支持粘贴和密码管理器；密码错误就地提示；忘记密码提供服务器侧恢复说明。</td></tr>
+      <tr><td>概览<br><code>#overview</code></td><td>今天安排了什么，有没有问题？</td><td>已开启任务、今日执行、需要留意；接下来执行的任务；账号状态；最近记录。空状态显示明确的第一步，不显示空指标。</td></tr>
+      <tr><td>我的任务<br><code>#tasks</code></td><td>如何管理已有安排？</td><td>全部 / 已开启 / 已暂停；搜索和账号筛选；开关、立即执行、编辑、复制、导出、删除。</td></tr>
+      <tr><td>新建 / 编辑任务<br><code>#new</code></td><td>如何把需求变成可执行任务？</td><td>四步向导，持续显示配置预览。编辑复用同一表单，保留原 ID、执行历史和计划开关状态。</td></tr>
+      <tr><td>任务详情<br><code>#task/:id</code></td><td>这件事具体如何执行？</td><td>账号、目标、顺序步骤、结果规则、时间计划；配置和执行记录两个页签；支持暂停和编辑。</td></tr>
+      <tr><td>账号<br><code>#accounts</code></td><td>用谁发送，账号还可用吗？</td><td>手机号登录 / 导入已有会话；账号名称、脱敏手机号、状态、关联任务数；检查连接、重新登录、移除。</td></tr>
+      <tr><td>执行记录<br><code>#runs</code></td><td>实际发生了什么？</td><td>搜索、结果与日期筛选；执行时间和耗时；抽屉内展示原文、发送状态、执行过程、处理建议；支持复制与导出。</td></tr>
+      <tr><td>任务模板<br><code>#templates</code></td><td>有没有现成配置？</td><td>文字签到、带按钮签到、群提醒、周期查询、每周备忘。使用模板后仍需确认自己的账号、目标和时间。</td></tr>
+      <tr><td>设置<br><code>#settings</code></td><td>如何调整系统偏好？</td><td>通用、Telegram 连接、通知、安全与数据四类。高级连接参数从日常任务中移走。</td></tr>
+      <tr><td>帮助与入门<br><code>#help</code></td><td>我遇到了不理解的地方。</td><td>重新体验设置、查看模板、常见问题。帮助文案直说含义，避免给用户堆协议与实现细节。</td></tr>
+    </tbody></table></div>
+  </section>
+  <section id="flows" data-screen-label="设计说明 · 用户流程">
+    <div class="chapter">03 / CORE FLOWS</div><h2>从第一次进入，到每天不必再管。</h2>
+    <div class="flow-label">首次使用</div><div class="flow"><span>启动实例</span><b>→</b><span>设置管理密码</span><b>→</b><span>连接 Telegram</span><b>→</b><span>添加账号</span><b>→</b><span>选择模板</span><b>→</b><span>创建并开启</span></div>
+    <div class="flow-label">创建一条任务</div><div class="flow"><span>选择方式</span><b>→</b><span>账号与目标</span><b>→</b><span>操作内容</span><b>→</b><span>时间与确认</span><b>→</b><span>任务详情</span><b>→</b><span>可选：立即执行</span></div>
+    <div class="flow-label">处理一次异常</div><div class="flow"><span>概览提示 / 通知</span><b>→</b><span>执行详情</span><b>→</b><span>确认是否已发送</span><b>→</b><span>处理连接或核对会话</span><b>→</b><span>决定是否再次执行</span></div>
+    <div class="spec-grid mt-24"><div class="spec-card"><h3>登录账号</h3><ol><li>填写账号别名和带国家区号的手机号。</li><li>验证码在 Telegram 客户端或其他 Telegram 指定渠道接收。</li><li>仅在需要时显示两步验证密码。</li><li>成功后回到原页面，不丢失正在编辑的任务。</li></ol></div><div class="spec-card"><h3>导入与分享</h3><ol><li>导出的是纯任务模板。</li><li>模板不含账号凭证、Session、Token。</li><li>导入后任务默认暂停。</li><li>重新选择账号、确认目标，再手动开启。</li></ol></div><div class="spec-card"><h3>编辑与删除</h3><ol><li>编辑保留既有配置。</li><li>未保存离开时允许继续编辑或放弃。</li><li>删除任务前解释后续计划将停止。</li><li>历史执行记录独立保留。</li></ol></div></div>
+  </section>
+  <section id="editor" data-screen-label="设计说明 · 任务编辑器">
+    <div class="chapter">04 / TASK EDITOR</div><h2>一次只做一组决定。</h2>
+    <div class="table-wrap"><table><thead><tr><th>步骤</th><th>默认暴露</th><th>交互与校验</th></tr></thead><tbody>
+      <tr><td>1. 选择方式</td><td>发送消息 / 消息＋按钮；模板入口</td><td>每种方式都有一句具体解释。选按钮方式时生成常用顺序步骤，用户可以继续调整。</td></tr>
+      <tr><td>2. 账号与目标</td><td>名称、执行账号、目标会话</td><td>默认选第一个可用账号；最近会话支持名称选择；支持 @用户名、ID、收藏夹；正式版在保存前解析目标身份与权限。不可用账号显示重新登录入口。</td></tr>
+      <tr><td>3. 操作内容</td><td>发送消息、等待回复、点击按钮</td><td>顺序列表，支持上移、下移、移除和添加。第一步先发消息，点击按钮前等待回复。消息空白、超过 4096 字符、按钮未填写时就地报错。</td></tr>
+      <tr><td>4. 时间与确认</td><td>每天固定时间、时区、通知、保存后启用</td><td>也可选每周、间隔、单次与 Cron。预览未来三次执行；最后用一句话复述谁向谁做什么。保存本身不触发立即执行。</td></tr>
+      <tr><td>进阶设置</td><td>默认收起</td><td>成功 / 失败关键词、随机延迟、恢复与限流策略说明。未填成功条件时显示原文，不能显示为业务成功。</td></tr>
+    </tbody></table></div>
+    <div class="spec-callout mt-24"><strong>时间必须让人看得懂。</strong><br>每天 08:30 与时区同时展示；随机时间明确写为“计划时间后再延迟 0–N 分钟”。每周可以多选星期；单次任务执行后结束计划。Cron 是进阶选项，正式版需用服务端解析与返回的未来执行时间作为最终依据。原型以 2026/11/09 10:42 为固定示例时钟，预览未来 15 天。</div>
+    <div class="spec-grid mt-24"><div class="spec-card"><h3>没有账号</h3><p>创建入口引导先接入账号；也能先浏览模板。添加账号弹窗关闭后仍停留在原页面。</p></div><div class="spec-card"><h3>按钮来自当前消息</h3><p>用文字定位当前收到的按钮；不要永久复用旧的 callback data。重复同名按钮应报歧义，提示更具体的选择方式。</p></div><div class="spec-card"><h3>仅发送消息</h3><p>群提醒或收藏夹备忘可以移除等待步骤。系统只记录消息发送结果，不以“没有回复”判失败。</p></div></div>
+  </section>
+  <section id="states" data-screen-label="设计说明 · 状态与异常">
+    <div class="chapter">05 / STATES & RECOVERY</div><h2>说清发生了什么，再说接下来怎么办。</h2>
+    <div class="state-list"><div><span class="status"><span class="status-dot"></span>已发送</span><h3>仅发送任务完成</h3><p>消息发送得到确认。本任务不要求回复，不推断其他业务状态。</p></div><div><span class="status blue"><span class="status-dot"></span>已收到回复</span><h3>有回复，业务结果未判定</h3><p>展示原始文字；没有匹配规则时保持这个状态，避免误报成功。</p></div><div><span class="status"><span class="status-dot"></span>规则匹配成功</span><h3>命中用户设置的成功规则</h3><p>显示命中哪一条关键词，失败关键词优先。同一回复有冲突时明确提示。</p></div><div><span class="status danger"><span class="status-dot"></span>规则匹配失败</span><h3>业务回复命中失败规则</h3><p>消息执行可能正常，但业务失败。正式版分别保留传输状态和业务判定。</p></div><div><span class="status warn"><span class="status-dot"></span>等待回复超时</span><h3>已发送，结果不确定</h3><p>先提示查看对应会话。不会无条件自动重发；再次执行前提示可能重复操作。</p></div><div><span class="status danger"><span class="status-dot"></span>执行异常</span><h3>按错误类型提供行动入口</h3><p>账号失效→重新登录；网络失败→检查连接；无权限→更换目标；限流→显示可恢复时间。</p></div></div>
+    <h4>关键边界</h4><div class="table-wrap"><table><thead><tr><th>情况</th><th>系统行为</th><th>用户看到的内容</th></tr></thead><tbody>
+      <tr><td>账号会话失效</td><td>暂停该账号执行，不阻塞其他账号；保存任务配置。</td><td>“需要重新登录”，提供直接入口。重登后不会补发全部历史任务。</td></tr>
+      <tr><td>Telegram 限流</td><td>尊重 FloodWait；将等待与恢复时间持久化；按账号隔离。</td><td>“Telegram 要求等待，预计 HH:mm 继续”，不承诺随机延迟能规避风控。</td></tr>
+      <tr><td>同一账号同时到点</td><td>同一账号进入串行队列；同一任务的手动 / 定时执行互斥。</td><td>“排队中”，显示前面还有几项；按钮不能连续生成重复运行。</td></tr>
+      <tr><td>机器人多条 / 编辑回复</td><td>关联本次发送后的目标消息与消息编辑事件；等待匹配的结果，不抓任意群消息。</td><td>步骤日志保留匹配依据；无法唯一对应时显示结果未确认。</td></tr>
+      <tr><td>服务重启错过计划</td><td>默认跳过过期触发，恢复下一次；可在后续版本增加有截止时间的补执行。</td><td>记录“错过计划，已跳过”，避免服务恢复时集中发送。</td></tr>
+      <tr><td>移除账号</td><td>暂停关联任务并清除绑定；清除本实例的会话；业务记录脱离账号继续保留。</td><td>移除确认中列出受影响任务数，并解释如何在 Telegram 撤销会话。</td></tr>
+      <tr><td>通知失败</td><td>通知状态与任务结果分开；通知故障不触发业务消息重发。</td><td>“任务已执行，通知发送失败”，单独提供重发通知操作。</td></tr>
+      <tr><td>正在编辑时离开</td><td>内部导航和关闭页面均提示；正式版还需恢复非敏感草稿。</td><td>“继续编辑”作为主操作，“放弃修改”作为次操作。</td></tr>
+    </tbody></table></div>
+    <p class="mt-24">加载用局部骨架或按钮忙碌状态；表单错误靠近字段并移动焦点；空状态始终有下一步；保存反馈短暂显示且不遮住操作。账号错误和等待超时是主要原型异常路径，更多网络错误需在真实服务接入后验证。</p>
+  </section>
+  <section id="visual" data-screen-label="设计说明 · 视觉系统">
+    <div class="chapter">06 / VISUAL LANGUAGE</div><h2>暖白、墨绿，和恰到好处的留白。</h2>
+    <p>浅色界面作为第一版主视觉。墨绿只用于主操作、选中状态和品牌；暖灰负责层级，柔和蓝色表示“收到回复”，琥珀色表示需留意。用文字与图标配合颜色，不把控制台变成仪表盘拼盘。</p>
+    <div class="swatches"><div class="swatch"><div class="color" style="background:#f7f8f4"></div><p>页面底色<small>#F7F8F4</small></p></div><div class="swatch"><div class="color" style="background:#ffffff"></div><p>内容表面<small>#FFFFFF</small></p></div><div class="swatch"><div class="color" style="background:#174c3c"></div><p>墨绿主色<small>#174C3C</small></p></div><div class="swatch"><div class="color" style="background:#232e29"></div><p>正文文字<small>#232E29</small></p></div><div class="swatch"><div class="color" style="background:#69746d"></div><p>辅助文字<small>#69746D</small></p></div><div class="swatch"><div class="color" style="background:#e5e9e1"></div><p>柔和分隔<small>#E5E9E1</small></p></div></div>
+    <div class="spec-grid mt-24"><div class="spec-card"><h3>文字</h3><p>中文优先系统字体，英文使用 Avenir Next 等系统后备，无远程字体依赖。页面标题 24–27px，分组标题 15–18px，桌面常规控件 13–14px，手机输入框 16px；10–11px 仅用于非关键辅助标签。正式版对不熟悉技术的用户可增加“舒适字号”偏好。</p></div><div class="spec-card"><h3>空间</h3><p>4 / 8px 基准。桌面侧栏 222px，内容边距 40px，卡片间距 20–24px，卡片内边距 24–30px。桌面主按钮 42–44px，手机主按钮至少 44px，内容圆角 14px、控件圆角 8px。克制阴影，只为弹层服务。</p></div><div class="spec-card"><h3>图标与动效</h3><p>一致的 1.65px 线性 SVG 图标，不用 emoji 充当导航。状态变化 160–200ms，执行反馈表达进度。没有自动滚动、装饰性闪烁和阻挡操作的入场动画，尊重减少动态效果偏好。</p></div></div>
+    <div class="small-preview mt-24"><div class="between wrap"><div class="row wrap"><button class="btn primary" type="button" onclick="location.href='index.html#new'">＋ 创建任务</button><button class="btn" type="button" onclick="location.href='index.html#tasks'">查看任务</button><span class="status blue">已收到回复</span><span class="status warn">等待回复超时</span></div><span class="mini-note">组件应用示例</span></div></div>
+  </section>
+  <section id="responsive" data-screen-label="设计说明 · 响应式与可访问性">
+    <div class="chapter">07 / RESPONSIVE & ACCESSIBLE</div><h2>手机上也能配置，不只是缩小一张桌面。</h2>
+    <div class="table-wrap"><table><thead><tr><th>场景</th><th>布局处理</th><th>交互要求</th></tr></thead><tbody>
+      <tr><td>宽桌面 ≥ 1190</td><td>侧栏＋主内容；概览使用主列表与辅助时间线两列；编辑页固定配置摘要。</td><td>主内容有最大宽度，不让文字在超宽屏上无限拉长。</td></tr>
+      <tr><td>平板 761–1190</td><td>保留侧栏；概览辅助区折为下方；编辑摘要在窄列不足时收起。</td><td>表格保留必要字段，避免主操作滑到看不见的位置。</td></tr>
+      <tr><td>手机 ≤ 760</td><td>五项底部导航；完整导航可从顶部展开；任务表格变为卡片；步骤保持单列。</td><td>摘要合并到最后确认区，底部导航不遮挡按钮；尊重设备安全区。</td></tr>
+      <tr><td>弹窗与抽屉</td><td>桌面居中弹窗 / 右侧详情；手机接近满宽，内容可独立滚动。</td><td>焦点进入弹窗并受约束，Escape 关闭，退出回到触发控件。</td></tr>
+      <tr><td>键盘与读屏</td><td>真实按钮、表单标签、导航地标、开关状态和错误关联。</td><td>可见焦点，所有操作支持键盘；拖动均有上移下移替代；反馈使用状态播报。</td></tr>
+      <tr><td>长内容 / 大字</td><td>会话地址允许换行，卡片能增高；缩放不能禁用。</td><td>关键说明不用省略号截断；不依赖 hover 才能发现操作；需以真实浏览器做大字及触屏验收。</td></tr>
+    </tbody></table></div>
+    <div class="spec-callout mt-24">验收重点：375px 手机、768px 平板、1440px 桌面；任务创建全流程；空白空间；验证码错误与两步验证；超时后的处理建议；保存 / 复制 / 暂停 / 删除；模板导出和导入；无控制台异常；减少动态效果下功能完整。</div>
+  </section>
+  <section id="delivery" data-screen-label="设计说明 · 开发交接">
+    <div class="chapter">08 / HANDOFF</div><h2>设计定清楚，开发有边界。</h2>
+    <p>原型采用本地 React 运行文件、编译后的 JavaScript 和 CSS，预览不依赖 CDN。演示任务与非敏感偏好保存于当前浏览器，可从顶栏“交互原型”菜单恢复示例或切换空白空间。验证码、密码、Token、API Hash、Session 均不持久化。</p>
+    <div class="spec-grid"><div class="spec-card"><h3>原型已覆盖</h3><p>主要页面和导航；任务完整向导与校验；顺序步骤；时间预览；任务操作；账号接入演示；执行与异常演示；模板；设置；首次引导；手机适配。</p></div><div class="spec-card"><h3>真实系统需实现</h3><p>服务端认证与会话、限流登录、凭证加密、Telegram 登录和会话解析、按钮匹配、数据库调度、运行互斥与恢复、通知、升级与备份。服务端重新校验全部输入。</p></div><div class="spec-card"><h3>后续版本再评估</h3><p>AI 识图、自动回复、消息监控转发、群话题、多分支流程与插件。第一版以稳定、易上手的常用任务闭环为发布目标。</p></div></div>
+    <h4>重新打开预览</h4><div class="reply-block mono">在仓库根目录运行：<br>python3 -m http.server 4311 --bind 127.0.0.1 --directory designs<br><br>浏览器打开：http://127.0.0.1:4311/telegram-console/index.html<br><br>源文件：icons.jsx / data.js / components.jsx / views.jsx / flows.jsx / app.jsx<br>样式：styles.css；运行入口：index.html + app.js<br>需要重新编译时：在本设计目录 npm install，再 npm run build。</div>
+    <h4>开发时必须保持的契约</h4><ol class="mini-note"><li>区分账号连接状态、执行传输状态和业务判定，不用一个布尔成功值承载三者。</li><li>保存任务、开启计划、立即执行是三个不同动作；“测试”如果会真实发消息，必须明确说明。</li><li>未来执行时间由服务端调度规则返回；Web API 多进程不能重复启动调度器。</li><li>不把真实登录会话或管理员 Token 保存在前端演示使用的 localStorage 模式中。</li><li>给前端稳定的错误类型与可重试语义，避免向用户直接抛出堆栈和原始凭证字段。</li><li>远程使用面板需完整认证、HTTPS、CSRF / 来源校验与访问限制；未初始化实例不能被匿名抢先接管。</li><li>验证所有离开编辑器的导航拦截、未保存草稿和运行中断行为；原型已覆盖取消、内部导航与关闭页面时的保护。</li><li>自定义目标、频道权限、回调按钮与历史 Session 的兼容性，以真实 Telegram 集成验收为准。</li></ol>
+    <footer>拾刻 SHIKE · 独立新产品设计 · 现有脚本保持独立。<br>视觉方向由用户确认：暖白＋墨绿，一套完整高保真交互稿。产品名称暂定，可直接替换。</footer>
+  </section>
+</main>
+</body>
+</html>

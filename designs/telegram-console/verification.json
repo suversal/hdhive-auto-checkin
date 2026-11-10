@@ -1,0 +1,175 @@
+{
+  "date": "2026-11-09",
+  "responsiveChecks": [
+    {
+      "width": 375,
+      "route": "overview",
+      "heading": "日常有安排，时间留给你。",
+      "scrollWidth": 360,
+      "viewport": 375
+    },
+    {
+      "width": 375,
+      "route": "tasks",
+      "heading": "我的任务",
+      "scrollWidth": 360,
+      "viewport": 375
+    },
+    {
+      "width": 375,
+      "route": "accounts",
+      "heading": "Telegram 账号",
+      "scrollWidth": 360,
+      "viewport": 375
+    },
+    {
+      "width": 375,
+      "route": "runs",
+      "heading": "每一次执行，都有迹可循。",
+      "scrollWidth": 360,
+      "viewport": 375
+    },
+    {
+      "width": 375,
+      "route": "templates",
+      "heading": "从一个现成的安排开始。",
+      "scrollWidth": 360,
+      "viewport": 375
+    },
+    {
+      "width": 375,
+      "route": "settings",
+      "heading": "设置",
+      "scrollWidth": 375,
+      "viewport": 375
+    },
+    {
+      "width": 375,
+      "route": "help",
+      "heading": "第一次用，也可以很顺手。",
+      "scrollWidth": 360,
+      "viewport": 375
+    },
+    {
+      "width": 768,
+      "route": "overview",
+      "heading": "日常有安排，时间留给你。",
+      "scrollWidth": 753,
+      "viewport": 768
+    },
+    {
+      "width": 768,
+      "route": "tasks",
+      "heading": "我的任务",
+      "scrollWidth": 753,
+      "viewport": 768
+    },
+    {
+      "width": 768,
+      "route": "accounts",
+      "heading": "Telegram 账号",
+      "scrollWidth": 753,
+      "viewport": 768
+    },
+    {
+      "width": 768,
+      "route": "runs",
+      "heading": "每一次执行，都有迹可循。",
+      "scrollWidth": 767,
+      "viewport": 768
+    },
+    {
+      "width": 768,
+      "route": "templates",
+      "heading": "从一个现成的安排开始。",
+      "scrollWidth": 753,
+      "viewport": 768
+    },
+    {
+      "width": 768,
+      "route": "settings",
+      "heading": "设置",
+      "scrollWidth": 768,
+      "viewport": 768
+    },
+    {
+      "width": 768,
+      "route": "help",
+      "heading": "第一次用，也可以很顺手。",
+      "scrollWidth": 753,
+      "viewport": 768
+    },
+    {
+      "width": 1440,
+      "route": "overview",
+      "heading": "日常有安排，时间留给你。",
+      "scrollWidth": 1425,
+      "viewport": 1440
+    },
+    {
+      "width": 1440,
+      "route": "tasks",
+      "heading": "我的任务",
+      "scrollWidth": 1425,
+      "viewport": 1440
+    },
+    {
+      "width": 1440,
+      "route": "accounts",
+      "heading": "Telegram 账号",
+      "scrollWidth": 1425,
+      "viewport": 1440
+    },
+    {
+      "width": 1440,
+      "route": "runs",
+      "heading": "每一次执行，都有迹可循。",
+      "scrollWidth": 1425,
+      "viewport": 1440
+    },
+    {
+      "width": 1440,
+      "route": "templates",
+      "heading": "从一个现成的安排开始。",
+      "scrollWidth": 1425,
+      "viewport": 1440
+    },
+    {
+      "width": 1440,
+      "route": "settings",
+      "heading": "设置",
+      "scrollWidth": 1440,
+      "viewport": 1440
+    },
+    {
+      "width": 1440,
+      "route": "help",
+      "heading": "第一次用，也可以很顺手。",
+      "scrollWidth": 1440,
+      "viewport": 1440
+    }
+  ],
+  "landscape": {
+    "width": 812,
+    "height": 375,
+    "passed": true
+  },
+  "flows": [
+    "空字段校验",
+    "未保存内部导航保护",
+    "手机端完整创建任务",
+    "模拟执行与超时结果留档",
+    "验证码错误与两步验证",
+    "账号接入",
+    "设置保存",
+    "导出不包含凭证",
+    "导入默认暂停",
+    "空白工作空间",
+    "从零完成首次设置",
+    "已有会话导入演示",
+    "新账号使用模板",
+    "手机输入框16px",
+    "设计说明八个章节"
+  ],
+  "applicationConsoleErrors": 0
+}

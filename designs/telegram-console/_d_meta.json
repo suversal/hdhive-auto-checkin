@@ -1,0 +1,37 @@
+{
+  "type": "design",
+  "designSystems": [],
+  "primaryDesignSystem": null,
+  "assets": {
+    "拾刻 · 完整交互原型": {
+      "versions": [
+        {
+          "path": "index.html",
+          "createdAt": "2026-11-09T13:03:19.923Z",
+          "status": "needs-review",
+          "subtitle": "暖白墨绿 / 任务、账号、执行记录、模板、设置与首次引导",
+          "viewport": {
+            "width": 1440,
+            "height": 1000
+          }
+        }
+      ]
+    },
+    "拾刻 · 交互与视觉规范": {
+      "versions": [
+        {
+          "path": "design-spec.html",
+          "createdAt": "2026-11-09T13:03:19.957Z",
+          "status": "needs-review",
+          "viewport": {
+            "width": 1280
+          }
+        }
+      ]
+    }
+  },
+  "createdAt": "2026-11-09T13:03:19.923Z",
+  "updatedAt": "2026-11-09T13:17:53.010Z",
+  "title": "拾刻 · Telegram 自动任务系统",
+  "prompt": "独立设计一个开源自部署的 Telegram 自动任务系统，页面交互与 UI 简单高级易上手，对小白友好。用户已选择暖白＋墨绿视觉方向。"
+}

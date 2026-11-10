@@ -1,0 +1,8 @@
+fastapi>=0.115,<1
+uvicorn>=0.34,<1
+cryptography>=44,<49
+telethon>=1.41,<2
+PySocks==1.7.1
+croniter>=6,<7
+httpx>=0.28,<1
+qrcode[pil]>=8,<9

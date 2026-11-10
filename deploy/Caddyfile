@@ -1,0 +1,4 @@
+{$SHIKE_DOMAIN} {
+    encode zstd gzip
+    reverse_proxy shike:8787
+}

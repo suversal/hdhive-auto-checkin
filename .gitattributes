@@ -1,0 +1,7 @@
+# Generated bundles contain significant template-literal whitespace from dependencies.
+web/app.js -text whitespace=-blank-at-eol linguist-generated=true
+web/calendar.css text eol=lf linguist-generated=true
+web/THIRD_PARTY_NOTICES.txt text eol=lf linguist-generated=true
+web/vendor/** linguist-vendored=true
+designs/telegram-console/app.js linguist-generated=true
+designs/telegram-console/vendor/** linguist-vendored=true

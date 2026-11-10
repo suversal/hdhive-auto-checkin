@@ -1,6 +1,19 @@
 .DS_Store
 .idea/
 .venv/
+.venv-shike/
+var/
+backups/
+.shike/
+dist/
+.pytest_cache/
+.playwright-cli/
+output/playwright/
+web/node_modules/
+web/*.map
+.env
+.env.*
+!.env.shike.example
 __pycache__/
 *.py[cod]
 
