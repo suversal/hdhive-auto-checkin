@@ -22,6 +22,9 @@ RUN pip install --no-cache-dir -r server/requirements.txt \
 
 COPY shike /app/shike
 COPY --from=frontend /site/ /app/web/
+# Build contexts may come from private archives created under umask 077.
+# Application code must be readable by the runtime user; /data stays private.
+RUN chmod -R u=rwX,go=rX /app/shike /app/web
 USER shike
 EXPOSE 8787
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

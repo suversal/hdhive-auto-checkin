@@ -42,6 +42,8 @@ jobs:
         with:
           python-version: "3.11"
       - uses: docker/setup-buildx-action@v4
+      - name: Exercise a private source checkout
+        run: chmod -R go-rwx shike
       - uses: docker/build-push-action@v7
         with:
           context: .
