@@ -6,8 +6,8 @@
 
 - 目标：SSH 别名 `oracle-blog`，ARM64 Linux。
 - 入口：`https://shike.suversal.com/`。
-- 应用提交：`4bdd0b59495606058e2e673918985ca503577a5a`，版本 `0.1.0`。
-- 构建方式：从已提交源码在服务器构建，镜像为 `ghcr.io/suversal/hdhive-auto-checkin:local-4bdd0b5`。这个标签仅存在于服务器，不表示已向 GHCR 发布。
+- 应用提交：`a7ab6d9cd17ad82ee2a48c9c761359c3eed19bc7`，版本 `0.1.0`。
+- 构建方式：从已提交源码在服务器构建，镜像为 `ghcr.io/suversal/hdhive-auto-checkin:local-a7ab6d9`。这个标签仅存在于服务器，不表示已向 GHCR 发布。
 - 目录：`/home/ubuntu/shike`；独立 Compose 项目 `shike`、数据卷 `shike_shike-data`。
 - 后端仅监听 `127.0.0.1:8787`；`.env` 的公开来源为 `https://shike.suversal.com`，Secure Cookie 开启。
 - 按用户选择新建空实例，未迁移本机账号、任务、记录或管理密码。验收时账号、任务和记录均为 0。
@@ -72,3 +72,9 @@ sudo -n sh shike.sh upgrade 实际版本号
 应用提交 `4bdd0b5` 已备份升级。升级前备份目录为 `/home/ubuntu/shike/backups/20261110T134436Z-3933276`，原数据卷、加密密钥权限及已有服务运行状态保持不变。验收时管理员仍未创建，账号、任务、活动执行均为 0，维护模式已退出。用户选择自己在服务器终端创建管理密码，命令见“首次使用”。
 
 [该提交的 GitHub CI](https://github.com/suversal/hdhive-auto-checkin/actions/runs/42827094139) 的 service、legacy、docker 三项全部通过。服务器仍使用本地源码镜像，未创建公开 Release。
+
+## 账号改名及列表回复更新
+
+已发布应用提交 `a7ab6d9`。账号卡片支持编辑名称；任务、执行记录、概览和任务详情的列表直接展示回复并支持展开，执行记录可搜索回复与异常原因。
+
+升级前备份位于 `/home/ubuntu/shike/backups/20261110T141256Z-3959464`。原数据卷保留，其他 13 个业务容器未重启。构建、容器健康和公网 HTTPS 健康检查通过。按用户要求直接发布，后续功能由用户实测，不等待完整回归。
