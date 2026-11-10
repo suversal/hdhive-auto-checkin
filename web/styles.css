@@ -1061,7 +1061,7 @@ td .iconbox {
   width: 88px;
 }
 .runs-table .column-actions {
-  width: 112px;
+  width: 88px;
 }
 .task-table :is(th, td),
 .runs-table :is(th, td) {
@@ -1086,6 +1086,16 @@ td .iconbox {
 .runs-table .actions-heading {
   text-align: right;
   white-space: nowrap;
+}
+.runs-table .actions-heading,
+.runs-table .actions-cell {
+  text-align: left;
+}
+.runs-table .record-detail-button {
+  padding: 0;
+  border: 0;
+  min-width: 44px;
+  justify-content: flex-start;
 }
 .table-actions {
   justify-content: flex-end;
