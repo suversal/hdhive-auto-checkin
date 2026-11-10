@@ -20,17 +20,17 @@ Cloudflare 新增了拾刻专用的代理 DNS 记录。源站复用服务器现�
 
 ## 首次使用
 
-已在本机 Chrome 打开专属首次设置页，初始化凭证已自动加载，不需要手动复制口令。由用户自己设置管理密码，然后填写 Telegram API 信息并扫码接入账号。
+网页只提供管理密码登录，首次设置口令和公开注册已移除。云端管理密码由用户本人在服务器终端设置一次，后续不同设备使用同一密码登录。
 
-如果关闭或刷新了首次设置页，尚未完成初始化，可在自己的终端重新获取专属入口：
+在自己电脑的终端运行：
 
 ```bash
-ssh oracle-blog
-cd /home/ubuntu/shike
-sudo -n docker compose -p shike --env-file .env -f compose.yaml exec -T shike python -m shike setup-link
+ssh -t oracle-blog 'cd /home/ubuntu/shike && sudo -n sh shike.sh init'
 ```
 
-专属入口含初始化凭证，仅在自己的浏览器打开，不要写入公开文档、聊天或日志。初始化完成后，上述命令只返回普通登录入口。
+按提示输入两遍至少 10 位的管理密码，输入不回显。命令先检查活动执行，安全暂停拾刻，设置后恢复服务；已有管理员时保留原密码。完成后打开 `https://shike.suversal.com/`，刷新并用管理密码登录，再按页面引导填写 Telegram API 信息和接入账号。
+
+只有管理密码遗忘时才运行 `sudo -n sh shike.sh reset-password`；这会撤销旧面板登录，保留 Telegram 会话和任务。不要把密码发到聊天、公开文档或命令参数中。
 
 ## 日常维护
 
@@ -54,7 +54,7 @@ sudo -n sh shike.sh upgrade 实际版本号
 
 同一 Telegram 任务只在一个地方开启。启用云端任务前，核对本机测试实例和旧 Actions 是否还在执行相同任务。
 
-当前公网静态文件响应带有 Cloudflare 的 4 小时浏览器缓存。升级后若仍看到旧界面，先强制刷新浏览器，必要时只清理拾刻域名对应的静态资源缓存；不要清空整个域名下其他项目的缓存。API 响应已验证为 `no-store`。
+公网静态文件带有 Cloudflare 浏览器缓存。新构建的首页会为 JS 和 CSS 附带内容版本标记，避免升级后复用旧登录流程。旧页面仍显示时刷新首页；API 响应使用 `no-store`。
 
 ## 验收与范围
 
@@ -65,4 +65,4 @@ sudo -n sh shike.sh upgrade 实际版本号
 - 现有 13 个容器的 ID 和启动时间均保持不变，没有触发 AIRadar / SourcePilot 采集或其他业务任务。
 - 首次构建发现私有源码归档权限导致应用文件不可读，已通过 Dockerfile 固定代码可读权限解决；CI 增加严格源码权限场景，修复后的 GitHub CI 全部通过。
 
-这里只完成部署和首次设置入口交付，管理密码、Telegram API 配置、扫码和实号发送由用户后续完成。未创建正式 Release，也未将本地账号数据上传服务器。
+这里只完成部署和登录入口交付，管理密码、Telegram API 配置、扫码和实号发送由用户后续完成。未创建正式 Release，也未将本地账号数据上传服务器。

@@ -32,7 +32,7 @@ def run_test(image: str):
         with socket.socket() as sock:
             sock.bind(("127.0.0.1", 0))
             port = sock.getsockname()[1]
-        (directory / ".env").write_text(f"SHIKE_IMAGE={image}\nSHIKE_PORT={port}\nSHIKE_BIND_ADDRESS=127.0.0.1\nSHIKE_DOMAIN=\nSHIKE_PUBLIC_URL=\nSHIKE_SECRET_KEY=\nSHIKE_SETUP_TOKEN=\n")
+        (directory / ".env").write_text(f"SHIKE_IMAGE={image}\nSHIKE_PORT={port}\nSHIKE_BIND_ADDRESS=127.0.0.1\nSHIKE_DOMAIN=\nSHIKE_PUBLIC_URL=\nSHIKE_SECRET_KEY=\n")
         os.chmod(directory / ".env", 0o600)
 
         def command(*args, input=None, check=True):
@@ -61,14 +61,13 @@ def run_test(image: str):
             assert request("/api/state")["settings"]["workspace"] == "Docker 合成验收"
 
         try:
-            script("install")  # Output deliberately captured: bootstrap URL stays private.
+            script("install", "--password-stdin", "--workspace", "Docker 合成验收", input=b"synthetic-docker-password\n")
             assert request("/api/health")["status"] == "ok"
             for resource in ("/", "/assets/app.js", "/assets/styles.css", "/assets/calendar.css", "/assets/THIRD_PARTY_NOTICES.txt"):
                 assert request(resource)
-            token = compose("exec", "-T", "shike", "python", "-m", "shike", "setup-token").stdout.decode().strip()
-            request("/api/auth/setup", {"setupToken": token, "password": "synthetic-docker-password", "workspace": "Docker 合成验收"})
+            request("/api/auth/login", {"password": "synthetic-docker-password"})
             assert_workspace()
-            print("PASS: install, health, assets and initial management setup", flush=True)
+            print("PASS: install, health, assets and terminal administrator provisioning and login", flush=True)
             compose("exec", "-T", "shike", "python", "-c", "from pathlib import Path; import os; assert os.getuid()!=0; assert not Path('/app/web/node_modules').exists(); assert not Path('/app/server/tests').exists(); assert not Path('/app/local.config.json').exists(); assert not list(Path('/app/web').glob('*.jsx'))")
             compose("restart", "shike")
             for _ in range(40):
@@ -84,6 +83,18 @@ def run_test(image: str):
             assert (archive_dir / "data.tar.gz").stat().st_size > 0
             assert_workspace()
             print("PASS: restart persistence and offline backup", flush=True)
+            # Operator initialization is idempotent; failed resets restore service.
+            script("init", "--password-stdin", input=b"must-not-replace-original\n")
+            assert_workspace()
+            failed_reset = script("reset-password", "--password-stdin", input=b"short\n", check=False)
+            assert failed_reset.returncode != 0
+            assert_workspace()
+            script("reset-password", "--password-stdin", input=b"synthetic-replacement-password\n")
+            cookies.clear()
+            request("/api/auth/login", {"password": "synthetic-replacement-password"})
+            assert_workspace()
+            print("PASS: terminal initialization preserves existing admin; password reset and recovery", flush=True)
+
 
             # Produce different local image configurations without external side effects.
             repository = project

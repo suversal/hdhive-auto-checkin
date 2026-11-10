@@ -8,9 +8,9 @@
 - Docker 和 `docker compose` 插件。Windows / macOS 用户可安装 [Docker Desktop](https://docs.docker.com/get-started/get-docker/)，服务器按 [Docker Engine 官方指南](https://docs.docker.com/engine/install/) 安装。
 - 支持 Linux AMD64 和 ARM64。Windows 使用 Linux 容器；脚本命令可在 WSL 终端运行。32 位 ARM 不在镜像支持范围内。
 
-安装过程中不需要在宿主机安装 Python、Node，也不需要手动创建管理密码或 Telegram 配置文件。
+安装过程中不需要在宿主机安装 Python、Node，也不需要手写配置文件；管理密码会在安装终端中按提示设置。
 
-## 第一次安装：下载、启动、打开网页
+## 第一次安装：下载、设置密码、打开网页
 
 1. 在项目的 **Releases** 页面下载 `shike-docker-版本号.zip`，解压得到 `shike` 文件夹。不要下载 GitHub 自动生成的 Source code 代替安装包。
 2. 启动 Docker，在解压文件夹中打开终端，运行：
@@ -19,10 +19,10 @@
    sh shike.sh install
    ```
 
-3. 等待出现健康检查通过和网页入口，在自己的浏览器打开该入口，设置管理密码。
+3. 按终端提示设置并确认管理密码（至少 10 位，输入不回显）。等待健康检查通过，打开显示的网页入口，用这个密码登录。
 4. 根据页面引导填写 Telegram API ID / API Hash，然后扫码接入账号，创建第一条任务。
 
-安装包固定使用对应版本的镜像，不会自动跳到其他版本。默认入口是 `http://127.0.0.1:8787`，只允许本机访问。首次设置入口会带一次性初始化凭证，只在自己的浏览器打开；后续登录只用管理密码。
+安装包固定使用对应版本的镜像，不会自动跳到其他版本。默认入口是 `http://127.0.0.1:8787`，只允许本机访问。网页只提供管理密码登录，不开放公开注册；更换设备无需重新初始化。安装中断或已有未初始化的实例，可运行 `sh shike.sh init` 补设密码并启动。
 
 如果 Releases 尚无安装包、或镜像还未公开，先使用本文末尾的“源码构建”。发布流水线不会因为下载源码就自动执行。
 
@@ -61,7 +61,9 @@ ssh -N -L 8787:127.0.0.1:8787 用户名@服务器地址
 | 操作 | 命令 |
 | --- | --- |
 | 启动或恢复服务 | `sh shike.sh start` |
-| 找回设置 / 登录入口 | `sh shike.sh open` |
+| 找回登录入口 | `sh shike.sh open` |
+| 首次补设管理密码 | `sh shike.sh init` |
+| 重设管理密码 | `sh shike.sh reset-password` |
 | 查看健康与运行状态 | `sh shike.sh status` |
 | 查看日志，按 Ctrl+C 退出 | `sh shike.sh logs` |
 | 备份 | `sh shike.sh backup` |
@@ -83,7 +85,7 @@ sh shike.sh upgrade 0.1.1
 
 1. 下载目标镜像；下载失败时继续保留原服务。
 2. 进入临时维护模式，禁止新的手动和定时执行；已有任务正在执行时退出维护，提示稍后重试。
-3. 停止后端，将数据库、原加密密钥、首次设置凭证和 `.env` 备份到 `backups/时间戳/`。
+3. 停止后端，将数据库、原加密密钥和 `.env` 备份到 `backups/时间戳/`。
 4. 使用原数据卷启动新镜像，等待健康检查；成功后保存镜像选择并退出维护模式。
 5. 若健康检查失败，尝试切回原镜像，**保留当前数据库**。若旧镜像也不兼容，则停止服务并显示备份位置，供人工恢复。
 
@@ -128,8 +130,8 @@ sh shike.sh start
 
 ```bash
 docker compose pull
+docker compose run --rm --no-deps shike python -m shike init-admin
 docker compose up -d --wait
-docker compose exec shike python -m shike setup-link
 ```
 
 普通 Compose 命令不会自动添加备份步骤；升级和恢复推荐使用 WSL 中的 `shike.sh`。不要用 Watchtower 等工具自动替换这个有持久数据和调度器的服务，除非你另行保证了备份和执行互斥。
@@ -141,7 +143,8 @@ docker compose exec shike python -m shike setup-link
 - **健康检查失败**：运行 `sh shike.sh logs`。常见原因是数据卷权限或加密密钥不匹配，不要删除数据卷来尝试修复。
 - **Telegram 超时**：服务器需要能连接 Telegram。在面板设置中配置服务器可用的代理；容器内的 `127.0.0.1` 不是宿主机代理。Docker Desktop 可使用 `host.docker.internal`，Linux 需要配置实际可达的宿主机或代理地址。
 - **网页打不开**：服务器部署默认走 SSH 转发，或配置域名 HTTPS；不要直接把 `127.0.0.1` 当成服务器公网地址。
-- **忘记管理密码**：停止服务，在同一数据卷执行 `docker compose run --rm --no-deps shike python -m shike reset-password`，按提示输入，再启动；Telegram 账号和任务保留。
+- **忘记管理密码**：运行 `sh shike.sh reset-password`，脚本确认没有活动执行后暂停服务，按终端提示输入密码，再恢复服务；Telegram 账号和任务保留。
+- **页面提示尚未设置管理密码**：在安装目录运行 `sh shike.sh init`，完成后刷新登录页。初始化只能在部署端进行，已有管理员不会被该命令覆盖。
 
 ## 开发者：源码构建和原有安装迁移
 
@@ -149,8 +152,8 @@ docker compose exec shike python -m shike setup-link
 
 ```bash
 docker compose -f compose.yaml -f compose.build.yaml build
+docker compose -f compose.yaml -f compose.build.yaml run --rm --no-deps shike python -m shike init-admin
 docker compose -f compose.yaml -f compose.build.yaml up -d --wait
-docker compose exec shike python -m shike setup-link
 ```
 
 镜像内部完成前端编译，运行层不包含 Node、测试、源码配置或开发依赖。原有使用 `docker compose up --build` 的开发安装，在同一文件夹、同一 `.env` 下按上述覆盖文件构建即可；卷名和 Compose 项目名保持不变。原镜像若没有维护命令，先在没有任务执行时停止服务、离线备份完整原数据卷，再构建新镜像。

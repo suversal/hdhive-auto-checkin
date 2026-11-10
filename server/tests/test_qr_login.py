@@ -1,15 +1,4 @@
 import time
-from urllib.parse import parse_qs, urlparse
-
-from shike.security import setup_link
-
-
-def test_quick_setup_link_keeps_token_out_of_http_query_and_path():
-    secret = "test-setup-value-with+special&symbols"
-    parsed = urlparse(setup_link("http://127.0.0.1:8787", secret))
-    assert secret not in parsed.query
-    assert secret not in parsed.path
-    assert parse_qs(parsed.fragment.split("?", 1)[1])["bootstrap"][0] == secret
 
 
 def qr_status(instance, login_id, expected):

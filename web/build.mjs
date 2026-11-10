@@ -2,6 +2,7 @@
 import { readFileSync, writeFileSync, readdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
 import path from "node:path";
 const require = createRequire(import.meta.url);
 const esbuild = process.env.SHIKE_ESBUILD_PATH
@@ -48,6 +49,22 @@ esbuild.buildSync({
 writeFileSync(
   path.join(dir, "calendar.css"),
   readFileSync(require.resolve("react-day-picker/style.css"), "utf8"),
+);
+// A new deployment must not reuse a proxy-cached bundle with the old auth flow.
+const indexPath = path.join(dir, "index.html");
+writeFileSync(
+  indexPath,
+  readFileSync(indexPath, "utf8").replace(
+    /\/assets\/(app\.js|styles\.css|calendar\.css)(?:\?v=[a-f0-9]+)?/g,
+    (_, name) =>
+      "/assets/" +
+      name +
+      "?v=" +
+      createHash("sha256")
+        .update(readFileSync(path.join(dir, name)))
+        .digest("hex")
+        .slice(0, 16),
+  ),
 );
 console.log("Built app.js from " + files.length + " source files.");
 const packageRoot = path.join(dir, "node_modules");

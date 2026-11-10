@@ -132,12 +132,6 @@ class LoginInput(Model):
     password: str = Field(min_length=1, max_length=1024)
 
 
-class SetupInput(Model):
-    setupToken: str = Field(min_length=16, max_length=256)
-    password: str = Field(min_length=10, max_length=1024)
-    workspace: str = Field(default="我的工作空间", min_length=1, max_length=30)
-
-
 class ApiCredentials(Model):
     apiId: int = Field(gt=0)
     apiHash: str = Field(pattern=r"^[a-fA-F0-9]{32}$")

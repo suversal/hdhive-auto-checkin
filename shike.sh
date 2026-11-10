@@ -11,9 +11,11 @@ die() { printf '%s\n' "$*" >&2; exit 1; }
 help() {
     cat <<'HELP'
 拾刻 Docker 管理
-  sh shike.sh install           拉取镜像、启动并显示首次设置入口
+  sh shike.sh install           拉取镜像、在终端设置管理密码并启动
+  sh shike.sh init              为未初始化的实例设置管理密码并启动
+  sh shike.sh reset-password    在终端重设管理密码并恢复服务
   sh shike.sh start             启动已安装实例
-  sh shike.sh open              显示设置或登录入口
+  sh shike.sh open              显示登录入口
   sh shike.sh status            查看运行与健康状态
   sh shike.sh logs              查看最近日志（Ctrl+C 退出）
   sh shike.sh backup            暂停调度，备份后恢复服务
@@ -28,7 +30,7 @@ HELP
 }
 case "$command_name" in
     help|-h|--help) help; exit 0 ;;
-    install|start|open|status|logs|backup|upgrade|rollback|restore|stop) ;;
+    install|init|reset-password|start|open|status|logs|backup|upgrade|rollback|restore|stop) ;;
     *) help; die "未知命令：$command_name" ;;
 esac
 command -v docker >/dev/null 2>&1 || die "请先安装并启动 Docker Desktop，或在服务器安装 Docker Engine 与 Compose 插件。"
@@ -65,10 +67,12 @@ entry() {
     binding=$(compose port shike 8787)
     port=${binding##*:}
     printf '\n%s\n' "请在自己的浏览器打开下面的入口："
-    compose exec -T shike python -m shike setup-link --port "$port"
-    if [ "$https" = 0 ]; then
-        printf '%s\n' "云服务器用户：先按部署指南建立 SSH 端口转发，再在自己电脑浏览器打开入口。"
-    fi
+    link=$(compose exec -T shike python -m shike url --port "$port")
+    printf '%s\n' "$link"
+    case "$link" in
+        http://127.0.0.1:*|http://localhost:*)
+            printf '%s\n' "云服务器用户：先按部署指南建立 SSH 端口转发，再在自己电脑浏览器打开入口。" ;;
+    esac
 }
 case "$command_name" in
     status) compose ps; exit ;;
@@ -95,6 +99,15 @@ cleanup() {
 trap cleanup EXIT
 trap 'exit 130' HUP INT TERM
 configured=$(compose config --images shike)
+configure_password() {
+    # Normal use attaches the terminal so getpass can hide both password inputs.
+    # Only explicit automation uses stdin; passwords never enter argv or .env.
+    if [ "${1:-}" = --password-stdin ]; then
+        compose run --rm -T --no-deps shike python -m shike "$password_command" "$@"
+    else
+        compose run --rm --no-deps shike python -m shike "$password_command" "$@"
+    fi
+}
 case "$command_name" in
     install)
         if [ -n "$(compose ps -a -q shike)" ]; then
@@ -103,11 +116,28 @@ case "$command_name" in
         fi
         pull "$configured"
         if [ "$https" = 1 ]; then compose pull caddy; fi
+        password_command=init-admin
+        configure_password "$@"
         up
         entry
         exit ;;
     start) up; entry; exit ;;
     stop) compose stop; printf '%s\n' "已停止，账号和任务数据保留。"; exit ;;
+    init|reset-password)
+        if [ -n "$(compose ps --status running -q shike)" ]; then
+            state=$(compose exec -T shike python -m shike maintenance --enable </dev/null) || die "无法进入维护模式，未修改密码。"
+            gated=1
+            printf '%s' "$state" | grep -Eq '"activeRuns":[[:space:]]*0([,}])' || die "还有任务正在执行，请等结束后再设置密码。"
+            compose stop shike
+            restart_needed=1
+        fi
+        password_command=init-admin
+        if [ "$command_name" = reset-password ]; then password_command=reset-password; fi
+        configure_password "$@"
+        up
+        restart_needed=0
+        entry
+        exit ;;
 esac
 
 current=$(compose ps -a -q shike)

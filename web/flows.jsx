@@ -1632,41 +1632,17 @@ function RunDetail({ run: initialRun, store, onClose, onTask }) {
     </Modal>
   );
 }
-function SetupPage({ initialized, store, actions, onDone }) {
-  const [step, setStep] = useState(initialized ? 1 : 0),
-    [workspace, setWorkspace] = useState(
-      store?.settings.workspace || "我的工作空间",
-    ),
-    [token, setToken] = useState(bootstrapToken),
-    [automaticSetup, setAutomaticSetup] = useState(Boolean(bootstrapToken)),
-    [password, setPassword] = useState(""),
-    [confirm, setConfirm] = useState(""),
+function SetupPage({ store, actions, onDone }) {
+  const [step, setStep] = useState(store?.settings.hasApi ? 1 : 0),
     [apiId, setApiId] = useState(""),
     [apiHash, setApiHash] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
-  useEffect(() => {
-    bootstrapToken = "";
-  }, []);
   async function go() {
     setError("");
-    if (step === 0 && (password.length < 10 || password !== confirm)) {
-      setError(
-        password.length < 10
-          ? "管理密码至少 10 位。"
-          : "两次输入的密码不一致。",
-      );
-      return;
-    }
     setBusy(true);
     try {
       if (step === 0) {
-        await actions.initialize({ setupToken: token, password, workspace });
-        setToken("");
-        setPassword("");
-        setConfirm("");
-      }
-      if (step === 1) {
         await actions.saveApi({
           apiId: Number(apiId),
           apiHash: apiHash.trim(),
@@ -1713,21 +1689,18 @@ function SetupPage({ initialized, store, actions, onDone }) {
             <Icon name="shield" size={12} />
             你的自部署工作空间
           </span>
-          {initialized && (
-            <button className="text-btn" onClick={onDone}>
-              稍后继续
-              <Icon name="arrow" size={13} />
-            </button>
-          )}
+          <button className="text-btn" onClick={onDone}>
+            稍后继续
+            <Icon name="arrow" size={13} />
+          </button>
         </div>
         <Steps
-          labels={["设置空间", "连接 Telegram", "添加账号", "准备就绪"]}
+          labels={["连接 Telegram", "添加账号", "准备就绪"]}
           current={step}
         />
         <h1>
           {
             [
-              "先设置面板管理密码。",
               "让拾刻连接到 Telegram。",
               "现在，接入你的账号。",
               "一切就绪，安排第一件小事。",
@@ -1737,7 +1710,6 @@ function SetupPage({ initialized, store, actions, onDone }) {
         <p className="subtitle">
           {
             [
-              "自己设置一个新密码，用来登录拾刻面板。完成后再连接 Telegram 账号。",
               "这组应用连接信息通常只需配置一次。",
               "推荐用手机 Telegram 扫码，也可以使用手机号验证码或导入会话。",
               "从一个现成模板开始，确认目标与时间后再启用。",
@@ -1745,69 +1717,6 @@ function SetupPage({ initialized, store, actions, onDone }) {
           }
         </p>
         {step === 0 && (
-          <>
-            {!automaticSetup ? (
-              <Field
-                label="首次设置口令"
-                id="setup-token"
-                hint="本机可运行 python -m shike open 一键打开专属入口，无需复制口令；也可使用部署者提供的设置口令。"
-              >
-                <input
-                  id="setup-token"
-                  type="password"
-                  value={token}
-                  autoComplete="off"
-                  onChange={(e) => setToken(e.target.value)}
-                  required
-                />
-              </Field>
-            ) : (
-              <Notice type="info">
-                专属设置入口已准备好，直接设置你的管理密码即可。
-              </Notice>
-            )}
-            <details className="advanced">
-              <summary>使用 Docker 时在哪里获取？</summary>
-              <p className="mini-note">在 compose 文件所在目录运行：</p>
-              <div className="reply-block mono mt-8">
-                docker compose exec shike python -m shike setup-link
-              </div>
-            </details>
-            <div className="mt-24">
-              <Field label="工作空间名称" id="setup-name">
-                <input
-                  id="setup-name"
-                  value={workspace}
-                  onChange={(e) => setWorkspace(e.target.value)}
-                  maxLength={30}
-                />
-              </Field>
-            </div>
-            <Field
-              label="管理密码"
-              id="setup-password"
-              hint="至少 10 位，支持粘贴和密码管理器。"
-            >
-              <input
-                id="setup-password"
-                type="password"
-                value={password}
-                autoComplete="new-password"
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </Field>
-            <Field label="再次输入密码" id="setup-confirm">
-              <input
-                id="setup-confirm"
-                type="password"
-                value={confirm}
-                autoComplete="new-password"
-                onChange={(e) => setConfirm(e.target.value)}
-              />
-            </Field>
-          </>
-        )}
-        {step === 1 && (
           <>
             <Notice type="info">
               在{" "}
@@ -1852,7 +1761,7 @@ function SetupPage({ initialized, store, actions, onDone }) {
             </p>
           </>
         )}
-        {step === 2 && (
+        {step === 1 && (
           <div className="setup-complete">
             <div className="iconbox large">
               <Icon name="users" size={24} />
@@ -1876,7 +1785,7 @@ function SetupPage({ initialized, store, actions, onDone }) {
             </Button>
           </div>
         )}
-        {step === 3 && (
+        {step === 2 && (
           <div className="setup-complete">
             <div className="iconbox large">
               <Icon name="check" size={25} />
@@ -1906,29 +1815,23 @@ function SetupPage({ initialized, store, actions, onDone }) {
             <Notice type="error">{error}</Notice>
           </div>
         )}
-        {step < 3 && (
+        {step < 2 && (
           <div className="form-footer">
             <div>
-              {step > 1 && (
+              {step > 0 && (
                 <Button variant="ghost" onClick={() => setStep(step - 1)}>
                   上一步
                 </Button>
               )}
             </div>
-            {step === 2 ? (
-              <Button variant="primary" onClick={() => setStep(3)}>
+            {step === 1 ? (
+              <Button variant="primary" onClick={() => setStep(2)}>
                 {store?.accounts.length ? "继续" : "稍后添加"}
                 <Icon name="arrow" size={14} />
               </Button>
             ) : (
               <Button variant="primary" disabled={busy} onClick={go}>
-                {busy
-                  ? "正在保存…"
-                  : step === 0
-                    ? "设置管理密码并继续"
-                    : step === 1
-                      ? "保存连接信息并继续"
-                      : "继续"}
+                {busy ? "正在保存…" : "保存连接信息并继续"}
                 <Icon name="arrow" size={14} />
               </Button>
             )}
@@ -1938,8 +1841,9 @@ function SetupPage({ initialized, store, actions, onDone }) {
     </div>
   );
 }
-function LoginPage({ onLogin }) {
+function LoginPage({ initialized, onLogin, onRefresh }) {
   const [password, setPassword] = useState(""),
+    [visible, setVisible] = useState(false),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
   return (
@@ -1959,11 +1863,23 @@ function LoginPage({ onLogin }) {
           <Icon name="shield" size={13} />
           管理员登录
         </div>
-        <h1>欢迎回来。</h1>
+        <h1>登录你的工作空间。</h1>
         <p className="subtitle">输入管理密码，继续你的自动化日常。</p>
+        {!initialized && (
+          <div className="mb-24">
+            <Notice type="info">
+              部署者尚未设置管理密码。请在服务器的安装目录运行
+              <code> sh shike.sh init </code>，按提示设置后刷新本页。
+              <button type="button" className="text-btn" onClick={onRefresh}>
+                刷新登录状态
+              </button>
+            </Notice>
+          </div>
+        )}
         <form
           onSubmit={async (e) => {
             e.preventDefault();
+            if (!initialized || busy) return;
             setError("");
             setBusy(true);
             try {
@@ -1976,21 +1892,41 @@ function LoginPage({ onLogin }) {
             }
           }}
         >
+          <input
+            type="hidden"
+            name="username"
+            value="admin"
+            autoComplete="username"
+          />
           <Field label="管理密码" id="admin-password" error={error}>
-            <input
-              type="password"
-              id="admin-password"
-              value={password}
-              autoComplete="current-password"
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+            <div className="password-input">
+              <input
+                type={visible ? "text" : "password"}
+                id="admin-password"
+                name="password"
+                aria-invalid={!!error}
+                aria-describedby={error ? "admin-password-hint" : undefined}
+                value={password}
+                autoComplete="current-password"
+                maxLength={1024}
+                disabled={!initialized || busy}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+              <IconButton
+                name="eye"
+                label={visible ? "隐藏密码" : "显示密码"}
+                aria-pressed={visible}
+                disabled={!initialized}
+                onClick={() => setVisible(!visible)}
+              />
+            </div>
           </Field>
           <Button
             variant="primary"
             type="submit"
             className="wide"
-            disabled={busy}
+            disabled={busy || !initialized}
           >
             {busy ? "正在登录…" : "进入工作空间"}
             <Icon name="arrow" size={16} />
@@ -1999,8 +1935,10 @@ function LoginPage({ onLogin }) {
         <details className="advanced">
           <summary>忘记密码了？</summary>
           <p className="mini-note">
-            在部署服务器停止当前服务后，使用 python -m shike reset-password
-            重设管理密码。此操作会让旧管理登录失效，不会改变 Telegram 账号。
+            在部署目录运行 sh shike.sh
+            reset-password，按提示重设管理密码。旧面板登录会失效，Telegram
+            账号和任务保留。源码安装请先停止服务，再运行 python -m shike
+            reset-password。
           </p>
         </details>
       </main>

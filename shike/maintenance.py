@@ -19,7 +19,9 @@ from . import __version__
 from .database import Database, iso
 from .security import InstanceLock
 
-FILES = {"shike.db", "master.key", "setup.token"}
+FILES = {"shike.db", "master.key"}
+# Accept old backups containing the now unused bootstrap token. Never restore it.
+LEGACY_FILES = FILES | {"setup.token"}
 
 
 def file_hash(path: Path) -> str:
@@ -67,9 +69,8 @@ def backup(data_dir: Path, output: str = "-"):
             external_key = os.getenv("SHIKE_SECRET_KEY")
             key = external_key.encode() if external_key else (data_dir / "master.key").read_bytes()
             (folder / "master.key").write_bytes(key)
-            shutil.copyfile(data_dir / "setup.token", folder / "setup.token")
             validate_snapshot(folder)
-            manifest = {"format": 1, "version": __version__, "createdAt": iso(), "files": {}}
+            manifest = {"format": 2, "version": __version__, "createdAt": iso(), "files": {}}
             for name in sorted(FILES):
                 manifest["files"][name] = file_hash(folder / name)
             (folder / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False), encoding="utf-8")
@@ -101,7 +102,7 @@ def restore(data_dir: Path, archive_path: str, replace: bool = False):
             try:
                 with tarfile.open(fileobj=handle, mode="r|gz") as archive:
                     for entry in archive:
-                        if entry.name not in FILES | {"manifest.json"} or entry.name in seen or not entry.isfile():
+                        if entry.name not in LEGACY_FILES | {"manifest.json"} or entry.name in seen or not entry.isfile():
                             raise ValueError("备份含有不支持的文件、路径或链接，未修改原数据。")
                         limit = 2 * 1024**3 if entry.name == "shike.db" else 65536
                         if entry.size > limit:
@@ -113,12 +114,15 @@ def restore(data_dir: Path, archive_path: str, replace: bool = False):
             finally:
                 if archive_path != "-":
                     handle.close()
-            if seen != FILES | {"manifest.json"}:
+            if seen not in (FILES | {"manifest.json"}, LEGACY_FILES | {"manifest.json"}):
                 raise ValueError("备份文件不完整，未修改原数据。")
             manifest = json.loads((folder / "manifest.json").read_text(encoding="utf-8"))
-            if not isinstance(manifest, dict) or manifest.get("format") != 1 or not isinstance(manifest.get("files"), dict) or set(manifest["files"]) != FILES:
+            if not isinstance(manifest, dict):
                 raise ValueError("备份格式不支持。")
-            for name in FILES:
+            expected = LEGACY_FILES if manifest.get("format") == 1 else FILES if manifest.get("format") == 2 else None
+            if expected is None or seen != expected | {"manifest.json"} or not isinstance(manifest.get("files"), dict) or set(manifest["files"]) != expected:
+                raise ValueError("备份格式不支持。")
+            for name in seen - {"manifest.json"}:
                 if file_hash(folder / name) != manifest["files"][name]:
                     raise ValueError("备份校验失败，未修改原数据。")
             external_key = os.getenv("SHIKE_SECRET_KEY")
@@ -144,6 +148,7 @@ def restore(data_dir: Path, archive_path: str, replace: bool = False):
                 (data_dir / ("shike.db" + suffix)).unlink(missing_ok=True)
             for name in FILES:
                 os.replace(folder / name, data_dir / name)
+            (data_dir / "setup.token").unlink(missing_ok=True)
             os.chmod(data_dir, 0o700)
     finally:
         lock.close()

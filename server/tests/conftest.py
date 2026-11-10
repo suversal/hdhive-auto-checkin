@@ -147,8 +147,10 @@ def instance(tmp_path):
 
 
 def initialize(instance):
-    response = instance.client.post("/api/auth/setup", json={"setupToken": instance.app.state.vault.setup_token, "password": "test-admin-password", "workspace": "测试空间"})
-    assert response.status_code == 201, response.text
+    from shike.admin import initialize_admin
+    initialize_admin(instance.app.state.db, "test-admin-password", "测试空间")
+    response = instance.client.post("/api/auth/login", json={"password": "test-admin-password"})
+    assert response.status_code == 200, response.text
     instance.client.headers["X-CSRF-Token"] = response.json()["csrfToken"]
     return response
 

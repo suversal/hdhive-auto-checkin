@@ -25,11 +25,11 @@ from .database import Database, iso, new_id
 from .errors import AppError
 from .models import (
     ApiCredentials, LoginCode, LoginInput, Model, PasswordChange, PasswordInput,
-    PhoneLogin, QRStart, SessionImport, SettingsInput, SetupInput, TaskInput,
+    PhoneLogin, QRStart, SessionImport, SettingsInput, TaskInput,
 )
 from .runner import Runner
 from .scheduling import next_time, preview
-from .security import BodyLimitMiddleware, InstanceLock, Vault, check_password, digest, password_hash, setup_link
+from .security import BodyLimitMiddleware, InstanceLock, Vault, check_password, digest, password_hash
 from .telegram import TelegramService, telegram_error
 
 
@@ -84,8 +84,7 @@ def create_app(config: Config | None = None, *, client_factory=None) -> FastAPI:
                     import webbrowser
                     await asyncio.sleep(.4)
                     base = config.public_url or f"http://127.0.0.1:{config.local_port}"
-                    link = base if db.get("admin_password") else setup_link(base, vault.setup_token)
-                    await asyncio.to_thread(webbrowser.open, link)
+                    await asyncio.to_thread(webbrowser.open, base)
                 asyncio.create_task(open_local_browser())
             try:
                 yield
@@ -184,30 +183,14 @@ def create_app(config: Config | None = None, *, client_factory=None) -> FastAPI:
         current = session(request)
         return {"initialized": bool(db().get("admin_password")), "authenticated": current is not None, "csrfToken": current["csrf"] if current else None}
 
-    @app.post("/api/auth/setup", status_code=201)
-    async def setup(body: SetupInput, request: Request, response: Response):
-        limit(request, "setup", limit=6)
-        if not hmac.compare_digest(body.setupToken, app.state.vault.setup_token):
-            raise AppError("SETUP_TOKEN_INVALID", "首次设置口令不正确，请从部署服务器获取。", 403)
-        hashed = await asyncio.to_thread(password_hash, body.password)
-        with db().tx(True) as connection:
-            if db().get("admin_password", connection=connection):
-                raise AppError("ALREADY_INITIALIZED", "此实例已完成设置，请使用管理密码登录。", 409)
-            workspace = body.workspace.strip()
-            if not workspace:
-                raise AppError("WORKSPACE_REQUIRED", "请填写工作空间名称。")
-            db().set("admin_password", hashed, connection=connection)
-            settings = db().get("settings", connection=connection)
-            settings["workspace"] = workspace
-            db().set("settings", settings, connection=connection)
-        return issue_session(response)
-
     @app.post("/api/auth/login")
     async def login(body: LoginInput, request: Request, response: Response):
         limit(request, "login")
         hashed = db().get("admin_password")
-        if not hashed or not await asyncio.to_thread(check_password, body.password, hashed):
-            raise AppError("LOGIN_INVALID", "管理密码不正确，或实例尚未完成初始化。", 401)
+        if not hashed:
+            raise AppError("ADMIN_NOT_INITIALIZED", "请先由部署者在服务器终端设置管理密码，再刷新登录。", 503)
+        if not await asyncio.to_thread(check_password, body.password, hashed):
+            raise AppError("LOGIN_INVALID", "管理密码不正确。", 401)
         return issue_session(response)
 
     @app.post("/api/auth/logout")

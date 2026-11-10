@@ -3367,3 +3367,16 @@ kbd {
     height: 44px;
   }
 }
+
+.password-input {
+  position: relative;
+}
+.password-input input {
+  padding-right: 48px;
+}
+.password-input .icon-btn {
+  position: absolute;
+  right: 8px;
+  top: 50%;
+  transform: translateY(-50%);
+}

@@ -12,18 +12,18 @@
 python3.11 -m venv .venv-shike
 source .venv-shike/bin/activate
 python -m pip install -r server/requirements.txt
+python -m shike init-admin
 python -m shike serve --open
 ```
 
-浏览器会打开本机入口。首次启动从专属链接进入时，直接设置自己的管理密码，无需复制初始化口令。专属链接的初始化凭证只放在 URL 片段中，不发送到 HTTP 日志；页面读取后立即清除地址栏中的片段。初始化完成后该入口不能覆盖已有管理密码。
-
+首次运行 `init-admin` 时，在终端输入并确认管理密码，输入不会回显。浏览器只提供登录，不开放注册，也不再使用首次设置口令。已有管理员再次执行初始化不会覆盖密码。
 已启动服务但浏览器没有打开时，可在同一数据目录运行：
 
 ```bash
 python -m shike open
 ```
 
-日常访问默认地址 `http://127.0.0.1:8787`，使用管理密码登录，登录有效期为 24 小时。使用普通地址首次设置时，仍可通过 `python -m shike setup-token` 获取口令。
+日常访问默认地址 `http://127.0.0.1:8787`，使用管理密码登录，登录有效期为 24 小时。
 
 ## Docker 部署
 
@@ -33,12 +33,12 @@ python -m shike open
 sh shike.sh install
 ```
 
-脚本自动创建配置、拉取镜像、启动并等待健康检查，随后显示设置入口。普通电脑和 ARM64 NAS 均有对应镜像，不需要安装 Python 或 Node。首次发布前、尚无公开镜像时，可使用下面的源码构建覆盖文件：
+脚本自动创建配置、拉取镜像，在终端提示设置管理密码，然后启动并显示登录入口。普通电脑和 ARM64 NAS 均有对应镜像，不需要安装 Python 或 Node。首次发布前、尚无公开镜像时，可使用下面的源码构建覆盖文件：
 
 ```bash
 docker compose -f compose.yaml -f compose.build.yaml build
+docker compose -f compose.yaml -f compose.build.yaml run --rm --no-deps shike python -m shike init-admin
 docker compose -f compose.yaml -f compose.build.yaml up -d --wait
-docker compose exec shike python -m shike setup-link
 ```
 
 默认只将 8787 端口发布到本机。远端服务器先使用 SSH 转发；有域名时，在 `.env` 填写 `SHIKE_DOMAIN`，脚本可自动启用 Caddy HTTPS。已有反向代理时使用 `SHIKE_PUBLIC_URL`。详细操作、NAS / Windows 用法及排错见 [小白安装与升级指南](docs/docker-deployment.md)。镜像发布及首次公开设置见 [发布指南](docs/releasing.md)。
@@ -84,7 +84,7 @@ docker compose exec shike python -m shike setup-link
 
 ## 数据和升级
 
-本地默认数据目录为 `var/shike/`，可使用 `SHIKE_DATA_DIR` 指定。Docker 为 `/data` 命名卷。目录中包括 SQLite 数据库、加密密钥 `master.key` 和首次设置口令。数据库与密钥必须一起保留；只复制数据库而丢失密钥会无法解密账号。
+本地默认数据目录为 `var/shike/`，可使用 `SHIKE_DATA_DIR` 指定。Docker 为 `/data` 命名卷。目录中包括 SQLite 数据库和加密密钥 `master.key`。数据库与密钥必须一起保留；只复制数据库而丢失密钥会无法解密账号。
 
 推荐使用管理脚本，先备份再升级，目标版本替换成实际已发布版本：
 

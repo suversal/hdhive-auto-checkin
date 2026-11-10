@@ -7,7 +7,6 @@ import hmac
 import os
 import secrets
 from pathlib import Path
-from urllib.parse import quote
 
 from cryptography.fernet import Fernet, InvalidToken
 
@@ -16,12 +15,6 @@ from .errors import AppError
 
 def digest(value: str) -> str:
     return hashlib.sha256(value.encode()).hexdigest()
-
-
-def setup_link(base_url: str, token: str) -> str:
-    # The fragment never reaches the server, reverse proxy or HTTP access log.
-    # The frontend consumes it and immediately replaces the browser history URL.
-    return base_url.rstrip("/") + "/?setup=1#setup?bootstrap=" + quote(token, safe="")
 
 
 def password_hash(password: str) -> str:
@@ -71,11 +64,6 @@ class Vault:
             self.fernet = Fernet(key)
         except (ValueError, TypeError) as exc:
             raise RuntimeError("SHIKE_SECRET_KEY 必须是有效的 Fernet 密钥。") from exc
-        self.setup_token = os.getenv("SHIKE_SETUP_TOKEN") or private_file(
-            data_dir / "setup.token", secrets.token_urlsafe(32).encode()
-        ).decode().strip()
-        if len(self.setup_token) < 16:
-            raise RuntimeError("首次设置口令至少需要 16 个字符。")
 
     def encrypt(self, value: str) -> str:
         return self.fernet.encrypt(value.encode()).decode()

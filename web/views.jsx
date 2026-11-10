@@ -1400,7 +1400,7 @@ function HelpPage({ actions }) {
           [
             "book",
             "部署与运行说明",
-            "首次口令、连接设置与数据维护。",
+            "管理密码、连接设置与数据维护。",
             () => window.open("/assets/guide.html", "_blank", "noopener"),
           ],
         ].map(([icon, title, text, fn]) => (

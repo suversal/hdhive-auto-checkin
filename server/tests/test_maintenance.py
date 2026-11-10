@@ -108,7 +108,7 @@ def test_restore_detects_tampered_backup_before_replacing_data(tmp_path):
     with tarfile.open(archive) as original, tarfile.open(bad, "w:gz") as modified:
         for info in original:
             content = original.extractfile(info).read()
-            if info.name == "setup.token":
+            if info.name == "master.key":
                 content = b"changed"
                 info.size = len(content)
             modified.addfile(info, io.BytesIO(content))
@@ -140,3 +140,30 @@ def test_maintenance_reports_active_jobs_without_cancelling_them(ready):
     assert maintenance(ready.config.data_dir, True)["activeRuns"] == 1
     assert ready.app.state.db.run(run["id"])["status"] == "queued"
     maintenance(ready.config.data_dir, False)
+
+
+def test_legacy_backup_with_setup_token_still_restores_without_reintroducing_it(tmp_path):
+    import hashlib
+    source = tmp_path / "source"
+    seeded(source)
+    archive = tmp_path / "current.tar.gz"
+    backup(source, str(archive))
+    legacy = tmp_path / "legacy.tar.gz"
+    token = b"obsolete-private-bootstrap-token"
+    with tarfile.open(archive) as original, tarfile.open(legacy, "w:gz") as modified:
+        for info in original:
+            content = original.extractfile(info).read()
+            if info.name == "manifest.json":
+                manifest = json.loads(content)
+                manifest["format"] = 1
+                manifest["files"]["setup.token"] = hashlib.sha256(token).hexdigest()
+                content = json.dumps(manifest).encode()
+                info.size = len(content)
+            modified.addfile(info, io.BytesIO(content))
+        entry = tarfile.TarInfo("setup.token")
+        entry.size = len(token)
+        modified.addfile(entry, io.BytesIO(token))
+    target = tmp_path / "target"
+    restore(target, str(legacy))
+    assert Database(target).get("admin_password") == Database(source).get("admin_password")
+    assert not (target / "setup.token").exists()

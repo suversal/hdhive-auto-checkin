@@ -1,8 +1,6 @@
-let bootstrapToken = "";
-const bootstrapParams = new URLSearchParams(location.hash.split("?")[1] || "");
-if (bootstrapParams.has("bootstrap")) {
-  bootstrapToken = bootstrapParams.get("bootstrap") || "";
-  history.replaceState(null, "", location.pathname + "#setup");
+// Discard obsolete private setup links without consuming their credentials.
+if (new URLSearchParams(location.hash.split("?")[1] || "").has("bootstrap")) {
+  history.replaceState(null, "", location.pathname + "#login");
 }
 let csrfToken = "";
 class ApiError extends Error {

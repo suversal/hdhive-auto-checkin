@@ -15,13 +15,31 @@ def test_private_endpoints_require_auth(instance):
     assert instance.client.get("/api/auth/status").json()["initialized"] is False
 
 
-def test_setup_requires_deployer_token_and_only_happens_once(instance):
-    assert instance.client.post("/api/auth/setup", json={"setupToken": "wrong-token-long-enough", "password": "test-password"}).status_code == 403
+def test_public_registration_is_closed_before_and_after_initialization(instance):
+    for path in ("/api/auth/setup", "/api/auth/register"):
+        assert instance.client.post(path, json={"password": "attacker-password"}).status_code == 404
+    response = instance.client.post("/api/auth/login", json={"password": "any-password"})
+    assert response.status_code == 503
+    assert response.json()["code"] == "ADMIN_NOT_INITIALIZED"
+    assert not instance.app.state.db.get("admin_password")
     response = initialize(instance)
     assert "HttpOnly" in response.headers["set-cookie"]
     assert "SameSite=strict" in response.headers["set-cookie"]
-    assert instance.client.post("/api/auth/setup", json={"setupToken": instance.app.state.vault.setup_token, "password": "test-password"}).status_code == 409
+    for path in ("/api/auth/setup", "/api/auth/register"):
+        assert instance.client.post(path, json={"password": "attacker-password"}).status_code == 404
     assert instance.client.get("/api/state").json()["tasks"] == []
+    assert not (instance.config.data_dir / "setup.token").exists()
+
+
+def test_operator_initialization_cannot_overwrite_existing_administrator(instance):
+    import pytest
+    from shike.admin import initialize_admin
+    initialize(instance)
+    original = instance.app.state.db.get("admin_password")
+    with pytest.raises(ValueError, match="不会覆盖"):
+        initialize_admin(instance.app.state.db, "different-password", "different space")
+    assert instance.app.state.db.get("admin_password") == original
+    assert instance.app.state.db.get("settings")["workspace"] == "测试空间"
 
 
 def test_csrf_and_origin_are_checked(instance):
@@ -51,8 +69,8 @@ def test_login_logout_and_password_rotation_revoke_old_sessions(instance):
 
 
 def test_bruteforce_rate_limit(instance):
-    initialize(instance)
-    for _ in range(8):
+    initialize(instance)  # The successful login also counts toward the eight-attempt limit.
+    for _ in range(7):
         assert instance.client.post("/api/auth/login", json={"password": "wrong"}).status_code == 401
     assert instance.client.post("/api/auth/login", json={"password": "wrong"}).status_code == 429
 

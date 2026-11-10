@@ -11,7 +11,6 @@ services:
       SHIKE_PUBLIC_URL: "${SHIKE_PUBLIC_URL:-}"
       SHIKE_COOKIE_SECURE: "${SHIKE_COOKIE_SECURE:-0}"
       SHIKE_SECRET_KEY: "${SHIKE_SECRET_KEY:-}"
-      SHIKE_SETUP_TOKEN: "${SHIKE_SETUP_TOKEN:-}"
     volumes:
       - shike-data:/data
     security_opt:

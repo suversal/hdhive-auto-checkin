@@ -148,8 +148,10 @@ function App() {
     };
   }, []);
   useEffect(() => {
-    document.title = (names[route] || "拾刻") + " · 拾刻";
-  }, [route]);
+    document.title =
+      (auth && !auth.authenticated ? "管理员登录" : names[route] || "拾刻") +
+      " · 拾刻";
+  }, [route, auth?.authenticated]);
   function draftFrom(template, accountId) {
     const data = {
       ...structuredClone(EMPTY_TASK),
@@ -386,8 +388,9 @@ function App() {
       body: { password },
     });
     setAuth({ initialized: true, ...result });
-    await refresh();
-    if (route === "login" || route === "setup") navigate("overview", true);
+    const data = await refresh();
+    if (!data.settings.hasApi) navigate("setup", true);
+    else if (route === "login" || route === "setup") navigate("overview", true);
   }
   async function logout() {
     try {
@@ -400,12 +403,6 @@ function App() {
     } catch (e) {
       notify(e.message, "error");
     }
-  }
-  async function initialize(body) {
-    const result = await api("/auth/setup", { method: "POST", body });
-    setAuth({ initialized: true, ...result });
-    navigate("setup", true);
-    await refresh();
   }
   async function loadMore() {
     try {
@@ -432,7 +429,6 @@ function App() {
     removeAccount,
     checkAccount,
     toast: notify,
-    initialize,
     saveApi: async (body) => {
       await api("/settings/telegram", { method: "PUT", body });
       await refresh();
@@ -492,12 +488,14 @@ function App() {
         )}
       </div>
     );
-  } else if (!auth.initialized) {
-    page = (
-      <SetupPage initialized={false} actions={actions} onDone={() => {}} />
-    );
   } else if (!auth.authenticated) {
-    page = <LoginPage onLogin={login} />;
+    page = (
+      <LoginPage
+        initialized={auth.initialized}
+        onLogin={login}
+        onRefresh={boot}
+      />
+    );
   } else if (!store) {
     page = (
       <Empty
@@ -514,7 +512,6 @@ function App() {
   } else if (route === "setup") {
     page = (
       <SetupPage
-        initialized
         store={store}
         actions={actions}
         onDone={() => navigate("overview")}
@@ -658,15 +655,17 @@ function App() {
   return (
     <>
       {page}
-      <input
-        ref={fileRef}
-        type="file"
-        accept=".json,application/json"
-        className="screen-reader"
-        tabIndex={-1}
-        aria-label="导入任务配置文件"
-        onChange={importFile}
-      />
+      {auth?.authenticated && (
+        <input
+          ref={fileRef}
+          type="file"
+          accept=".json,application/json"
+          className="screen-reader"
+          tabIndex={-1}
+          aria-label="导入任务配置文件"
+          onChange={importFile}
+        />
+      )}
       {toast && (
         <div
           className={"toast " + toast.type}
