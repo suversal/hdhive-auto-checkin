@@ -1,15 +1,18 @@
-<div align="center">
-  <h1>🚨 HDHive 自动签到 🚨</h1>
-  <p><b>基于 `Python + Playwright` 编写的 HDHive 自动化签到工具</b></p>
-  <p><b>当前定位：通过脚本模拟真实浏览器完成网页登录、签到操作和积分记录核验。</b></p>
-  <p><b>适用场景：站点未触发额外图形验证时，保留最直接的网页端签到流程。</b></p>
-  <p><b>⚠️ 边界说明：当前 <code>main</code> 分支不接入验证码服务；如果触发 Cloudflare 或站内点选验证，可能无法完成签到。</b></p>
-  <p><b>实测 <code>feature_yescaptcha</code> 图形点选验证通过率不稳定，当前不建议作为主方案；推荐使用 <code>telethon</code> 分支通过 Telegram 机器人签到。</b></p>
-  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/telethon">telegram绑定签到（V3版本 当前推荐方案）：telethon分支 </a> 👈</h3>
-  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/feature_yescaptcha">使用yescaptcha进行签到验证（V2版本 成功率较低 不推荐使用 可自行fork优化）：feature_yescaptcha分支</a> 👈</h3>
-  <h3>👉 <a href="https://github.com/suversal/hdhive-auto-checkin/tree/main">网页端签到分支（V1版本 无签到验证时使用 不再维护）：main分支</a> 👈</h3>
-  <br/>
-</div>
+# HDHive 网页签到 · 历史实现
+
+通过 Playwright 模拟网页登录和签到，不接入验证码服务。触发额外验证时可能无法完成。
+
+## 当前分支与使用入口
+
+| 分支 | 用途 | 入口 |
+| --- | --- | --- |
+| `codex/shike-backend` | 拾刻 Web 面板：扫码接入、浏览器配置、定时任务和回复记录 | [Web 部署与使用](https://github.com/suversal/hdhive-auto-checkin/tree/codex/shike-backend) |
+| `telethon` | Telegram 脚本入门版：配置 JSON 后由 GitHub Actions 定时运行 | [Actions 入门指南](https://github.com/suversal/hdhive-auto-checkin/tree/telethon) |
+| `main` | 历史网页签到实现，不处理额外图形验证，不再作为新用户入口 | [main](https://github.com/suversal/hdhive-auto-checkin/tree/main) |
+| `feature_yescaptcha` | 历史验证码实验，实现保留但通过率不稳定，不再维护 | [YesCaptcha 分支](https://github.com/suversal/hdhive-auto-checkin/tree/feature_yescaptcha) |
+
+本文下方保留的是**当前历史分支**的原操作说明，不适用于拾刻 Web 面板。不要把网页账号密码、Telegram 用户会话和面板管理密码混用。
+
 
 ---
 
@@ -20,16 +23,16 @@
 - ☁️ **开箱即用的 CI**：内置 GitHub Actions 工作流，支持定时自动执行和手动触发。
 - 📢 **结果通知**：支持集成 Telegram Bot，签到结束后汇总并推送详细结果。
 - 🛡️ **异常捕获与排障**：运行失败时，会自动将网页截图和浏览器诊断 JSON 保存到 Artifacts 中，极大降低排错成本。
-- 🕵️ **反指纹侦测**：内置浏览器指纹混淆脚本，有效降低被站点防火墙拦截的概率。
+- 🕵️ **反指纹侦测**：保留浏览器指纹相关设置，不保证绕过站点验证。
 
 ---
 
 ## 🚀 部署指引 (GitHub Actions)
 
-推荐使用 GitHub Actions 进行部署，无需自备服务器，完全免费。
+以下仅说明历史脚本的 GitHub Actions 用法，无需自备服务器；用量、限制以你自己的 GitHub 账户为准。新用户请先看上方 Web / Telegram 脚本入口。
 
 ### 1. Fork 本仓库
-点击页面右上角的 `Fork` 按钮，将本项目 Fork 到你自己的 GitHub 账号下。
+点击 `Fork`，取消勾选“Copy the … branch only”，确保包含 **`main`** 分支。然后在自己仓库的 **Settings → General → Default branch** 设为 **`main`**；仅切换页面显示分支不会改变定时任务执行的分支。不要把本历史脚本的密钥填到 Web 面板配置里。
 
 ### 2. 配置 Secrets 和 Variables
 在你的仓库页面，进入 **Settings** -> **Secrets and variables** -> **Actions**。
@@ -62,17 +65,17 @@
 - `TELEGRAM_CHAT_ID` (可选，如在HDHIVE_ACCOUNTS_JSON配置则无需再配置): 全局默认的 Telegram 接收人 Chat ID。
 
 ### 3. 启用并触发 Actions 工作流
-1. 进入 **Actions** 标签页，点击 `I understand my workflows, go ahead and enable them`。
+1. 进入 **Actions** 标签页启用工作流，手动运行选择 **`main`** 分支；先配好所需 Secrets，再确认执行。
 2. 在左侧边栏点击 **HDHive Check-in**。
 3. 点击右侧的 `Run workflow` 手动执行一次，检查是否配置成功。
-4. 默认设定的定时任务为北京时间每天 **06:23** 自动执行 (`cron: "23 22 * * *"` 对应 UTC 时间)。
+4. 默认设定的定时任务为北京时间每天 **05:23** 自动执行 (`cron: "23 21 * * *"` 对应 UTC 时间)。
 <img width="1983" height="650" alt="image" src="https://github.com/user-attachments/assets/cfa65129-f786-4adc-86c9-bcb8c592eeeb" />
 
 ---
 
 ## 💻 本地运行与开发
 
-本地运行时，脚本会优先读取仓库根目录下的 `local.config.json`，无需繁琐地去配置环境变量。（该文件已加入 `.gitignore`，不会被误提交）
+本地运行时，脚本会优先读取仓库根目录下的 `local.config.json`，无需繁琐地去配置环境变量。（该文件已加入 `.gitignore`，仍请在提交前检查暂存区）
 
 ### 环境准备
 
@@ -134,12 +137,14 @@ export HDHIVE_BROWSER_PATH="/path/to/chrome"
 - 使用 `ubuntu-latest`
 - 通过 Playwright 驱动 Chrome 执行 `python scripts/checkin.py`
 - 支持 `workflow_dispatch`
-- 默认 `cron` 为 `23 22 * * *`
+- 默认 `cron` 为 `23 21 * * *`
 - job 总超时为 25 分钟，签到 step 超时为 22 分钟，避免异常挂起占满 GitHub Actions 默认上限
 
-`23 22 * * *` 对应北京时间 `06:23`。
+`23 21 * * *` 对应北京时间 `05:23`。
 
 如果你想调整执行时间，直接修改 `.github/workflows/checkin.yml` 里的 `cron`。
+
+GitHub 的定时任务只在默认分支运行，可能延迟；Fork 后需手动启用，公共仓库长期无活动还可能自动停用。见[定时触发说明](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)。从旧脚本迁移到 Telegram 脚本或 Web 面板时，先停用旧计划，避免重复签到。
 
 ## Telegram Notification
 
