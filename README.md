@@ -1,531 +1,162 @@
 <div align="center">
-  <h1>🧩 Telegram 自动任务 🧩</h1>
-  <p><b>基于 Python + Telethon + GitHub Actions 的 Telegram 定时消息工具</b></p>
-  <p><b>支持多个 Telegram 账号，每个账号配置多个任务，定时给不同机器人发送不同消息，并汇总展示机器人原始返回。</b></p>
-  <br/>
+  <h1>拾刻 Shike</h1>
+  <p><b>在浏览器里安排你的 Telegram 自动任务</b></p>
+  <p>扫码接入账号 · 定时发送消息 · 配置按钮步骤 · 直接查看回复</p>
+  <p><a href="docs/docker-deployment.md">部署指南</a> · <a href="docs/telegram-api.md">申请 Telegram API</a> · <a href="README.actions.md">GitHub Actions 入门版</a></p>
 </div>
 
-## 选择使用方式
+拾刻是一个自部署的 Telegram 自动任务面板。你可以给机器人定时发送签到指令、查询积分，也可以给自己的收藏夹或有发送权限的群组安排提醒。账号、目标、消息和时间都在网页里配置，执行后直接在列表查看原始回复。
 
-| 方式 | 适合谁 | 开始使用 |
+它从 HDHive 签到脚本发展而来，现在支持通用 Telegram 任务，仓库名称沿用 `hdhive-auto-checkin`。每个人部署自己的实例，使用自己的 Telegram 用户账号执行任务。
+
+![拾刻任务列表：账号、执行时间、状态和原始回复](docs/images/tasks.png)
+
+*截图使用演示账号和消息。*
+
+## 先选使用方式
+
+| 方式 | 适合什么情况 | 开始使用 |
 | --- | --- | --- |
-| GitHub Actions 入门版 | 只需要定时运行脚本，不需要常驻网页 | 继续阅读本文 |
-| 拾刻 Docker 完整版 | 想用浏览器扫码接入账号、配置任务、查看记录 | [完整版介绍](README.shike.md) · [小白安装与升级指南](docs/docker-deployment.md) |
+| **拾刻 Web 面板** · 当前 `codex/shike-backend` 分支 | 希望扫码登录、浏览器管理、多账号任务和执行记录 | [下方快速部署](#快速部署当前可用的源码构建方式) · [完整部署指南](docs/docker-deployment.md) |
+| **GitHub Actions 入门版** · `telethon` 分支 | 只有简单的定时消息任务，不想维护常驻服务 | [脚本说明](README.actions.md) · [切换到 telethon](https://github.com/suversal/hdhive-auto-checkin/tree/telethon) |
 
-两种方案独立使用，原有脚本配置和签到工作流保持不变。
+两种方式独立使用，配置不会自动同步。迁移同一条签到任务时，先暂停旧计划，避免重复发送。`main` 与 `feature_yescaptcha` 保留旧网页签到实现，新用户从上面两条路线选择即可。
 
----
+## 可以做什么
 
-> 本项目最初是为 HDHive 自动签到编写的，后来升级为通用的 Telegram 自动发消息方案。如果你是为了查看旧版 HDHive 绑定机器人签到说明，可以参考备份文档：[README.hdhive.md](/Users/sue/hdhive-auto-checkin/README.hdhive.md)。
+- **多账号管理**：扫码登录，也支持手机号验证码或导入自己的 Telethon StringSession；接入后随时编辑账号备注。
+- **消息与按钮流程**：发送文字、等待回复、间隔等待、按文字点击当前消息里唯一匹配的按钮。
+- **定时执行**：每日、每周、固定间隔、单次、五字段 Cron；每个任务独立设置时区和随机延迟。
+- **回复与记录**：列表直接显示回复，长内容省略并可悬停查看；详情保留实际发送内容、步骤日志、耗时和异常原因。
+- **结果规则与通知**：按自己的成功、失败关键词匹配；仅异常、每次执行、每日摘要或不通知，可发到收藏夹或通过独立通知机器人发送。
+- **日常管理**：任务模板导入导出、批量启停、搜索、执行记录导出，以及备份、升级和回退命令。
 
-## 项目介绍
+普通消息可以只发送，不必等待接收方回复；机器人签到需要收集结果时，再开启“等待对方回复”。图片验证码及需要人工验证的流程仍需自己处理。
 
-这个项目现在定位为一个通用的 Telegram 自动任务工具。它保留了最初 HDHive 自动签到场景里沉淀下来的多账号、定时执行、结果通知能力，但不再把逻辑写死在 HDHive 上。
+## 快速部署：当前可用的源码构建方式
 
-它不再只绑定某一个站点或某一种签到逻辑，而是做一件更通用的事情：
+**目前尚未发布正式 Release 安装包。先按本节构建，不要直接拉取示例配置里的 `latest` 镜像。** 正式安装包发布后，也可以使用[安装包部署方式](docs/docker-deployment.md#方式二已有正式-release-安装包时)。
 
-1. 使用你的 Telegram 账号登录。
-2. 按配置给不同的 Telegram 机器人发送消息。
-3. 等待机器人回复。
-4. 把机器人返回原样记录下来。
-5. 可选发送账号通知和总汇总通知。
+### 1. 准备环境并下载
 
-适合这类场景：
+准备一台**常开、能连接 Telegram** 的电脑、NAS 或服务器，安装 Git、Docker 和 `docker compose` 插件。macOS / Windows 可使用 [Docker Desktop](https://docs.docker.com/get-started/get-docker/)，Linux 按 [Docker Engine 指南](https://docs.docker.com/engine/install/)安装。Windows 使用 Linux 容器，以下脚本在 WSL 终端执行。部署目标为 Linux AMD64 / ARM64，32 位 ARM 不在支持范围内。
 
-- 每天给某个机器人发送签到消息。
-- 用多个 Telegram 账号分别执行不同任务。
-- 同一个 Telegram 账号给多个机器人发送不同指令。
-- 定时执行命令，并把机器人返回集中推送给主账号。
-
-## 核心特性
-
-- 多 Telegram 账号：每个账号使用自己的 Telethon `StringSession`。
-- 多任务配置：一个 Telegram 账号下面可以配置多个任务。
-- 通用机器人消息：每个任务都能指定目标机器人和发送内容。
-- 原始返回展示：不强行判断成功或失败，只展示机器人返回内容。
-- 账号内通知：每个 Telegram 账号可以把自己的任务结果发到 Saved Messages 或指定 chat。
-- 总汇总通知：可以通过 Telegram Bot API 把所有账号、所有任务的结果发到主账号。
-- GitHub Actions：支持定时触发、手动触发、push 触发。
-- 本地代理：支持 Clash/Mihomo 这类本机代理，解决 Telethon 连接 Telegram 超时问题。
-
-## 工作流程
-
-1. GitHub Actions 到点运行，或者你在本地手动运行脚本。
-2. 脚本读取 Telegram API 信息、账号配置、任务配置。
-3. 每个 Telegram 账号建立一次 Telethon 连接。
-4. 同一个账号下的多个任务按顺序执行。
-5. 每个任务向指定机器人发送指定消息。
-6. 脚本等待机器人回复。
-7. 结果写入 `artifacts/latest-results.json`。
-8. 如果配置了通知，发送账号自己的通知和所有任务的汇总通知。
-
-## 准备工作
-
-你需要准备：
-
-- 一个 GitHub 仓库，用来运行 GitHub Actions。
-- 一个或多个 Telegram 账号。
-- Telegram API 的 `api_id` 和 `api_hash`。
-- 每个 Telegram 账号对应的 `StringSession`。
-- 你要发送消息的目标机器人 username，例如 `@HDHiveBot`。
-- 可选：一个 Telegram Bot Token，用来发送总汇总通知。
-
-## 获取 Telegram api_id 和 api_hash
-
-1. 打开 [my.telegram.org/apps](https://my.telegram.org/apps)。
-2. 使用你的 Telegram 手机号登录。
-3. 点击创建 application。
-4. 根据自己的需求填写表单：
-
-```text
-App title: Telegram Auto Tasks
-Short name: telegram_auto_tasks
-URL: https://github.com/suversal
-Platform: Desktop
-Description: Personal Telegram automation
-```
-<img width="617" height="635" alt="image" src="https://github.com/user-attachments/assets/11cb07ec-3d66-4a62-9467-8a96b7bfa338" />
-
-5. 创建成功后，页面会显示：
-
-```text
-api_id
-api_hash
-```
-
-这两个值后面会用到。不要公开 `api_hash`。
-<img width="745" height="579" alt="image" src="https://github.com/user-attachments/assets/80e10bf9-02ae-4179-a968-8e602928879a" />
-
-## 生成 TELEGRAM_SESSION
-
-`TELEGRAM_SESSION` 是 Telegram 登录会话。每个 Telegram 账号都要单独生成一个。
-
-先安装依赖：
+在准备部署的机器上运行：
 
 ```bash
-cd /Users/sue/hdhive-auto-checkin
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
+git clone --depth 1 --branch codex/shike-backend https://github.com/suversal/hdhive-auto-checkin.git shike
+cd shike
+docker compose version
+docker info
 ```
 
-打开 [scripts/generate_telegram_session.py](/Users/sue/hdhive-auto-checkin/scripts/generate_telegram_session.py)，把顶部的变量改成你的真实值：
+如果已经有 `shike` 安装目录，不要覆盖，按[升级说明](docs/docker-deployment.md#源码构建版升级)操作。
 
-```python
-API_ID = 123456
-API_HASH = "your-api-hash"
-```
+### 2. 构建镜像并设置管理密码
 
-运行脚本：
+在刚下载的目录中创建配置，将镜像设为本机构建的 `shike:local`：
 
 ```bash
-python scripts/generate_telegram_session.py
+sed 's|^SHIKE_IMAGE=.*|SHIKE_IMAGE=shike:local|' .env.shike.example > .env
+docker compose -f compose.yaml -f compose.build.yaml build
+SHIKE_PULL_POLICY=never sh shike.sh install
 ```
 
-脚本会依次让你输入：
+第一条命令用于**新安装**，不要拿它覆盖已有 `.env`。构建过程会在 Docker 内安装依赖、编译前端，宿主机不需要安装 Python 或 Node。
 
-```text
-Telegram 手机号（带国家区号，例如 +8613800000000）:
-Telegram 验证码:
-Telegram 二步验证密码:
-```
+按终端提示输入两遍管理密码，至少 10 位，输入不回显。它用于以后登录网页面板；初始化在部署端完成，网页不开放公开注册。无需额外的首次设置口令。
 
-如果你的账号没有开启二步验证，就不会要求输入二步验证密码。
+Linux 如需 `sudo` 操作 Docker，构建命令也加 `sudo`，安装用 `sudo env SHIKE_PULL_POLICY=never sh shike.sh install`。后续管理命令同样需要相应权限。
 
-成功后会输出：
+### 3. 打开网页
 
-```text
-TELEGRAM_SESSION:
-一长串字符串
-```
+本机部署：打开 **`http://127.0.0.1:8787`**，用刚才的管理密码登录。
 
-把这一整串保存下来。它就是该 Telegram 账号的 session。
-如果你有两个 Telegram 账号，就对第二个账号再运行一次这个脚本，生成第二个 session。
-
-<img width="835" height="433" alt="image" src="https://github.com/user-attachments/assets/736f610b-b4f5-490c-b587-2b4c7f8225f1" />
-
-## 本地配置
-
-复制模板：
+云服务器默认也只监听本机。在**自己的电脑**另开终端，建立 SSH 转发并保持开启：
 
 ```bash
-cp local.config.example.json local.config.json
+ssh -N -L 8787:127.0.0.1:8787 用户名@服务器地址
 ```
 
-本地配置必须是标准 JSON，不能写 `// 注释`。
+然后在自己电脑打开 `http://127.0.0.1:8787`。若本机端口被占用，将第一个 `8787` 改成 `8789`，浏览器也改用 `8789`。需要手机直接访问或长期使用域名时，见 [HTTPS 配置](docs/docker-deployment.md#有域名可选自动-https)。
 
-配置结构是：
+## 申请 API 并接入账号
 
-```text
-Telegram 账号 -> 多个任务
-```
+1. 打开 [my.telegram.org/apps](https://my.telegram.org/apps)，用带国家区号的 Telegram 手机号登录。**官网验证码通过 Telegram 发到已登录设备，不是短信**，见[官网登录说明](https://my.telegram.org/auth)。
+2. 进入 **API development tools**，创建应用。App title 可填 `Shike Tasks`，Short name 填 `shiketasks`，Platform 选 `Desktop`。已有应用时使用现有信息。
+3. 保存应用页面的 **App api_id** 和 **App api_hash**，在拾刻首次引导或“设置 → Telegram 连接”填入。
+4. 点击“添加账号”，起一个方便识别的备注名。手机 Telegram → **设置 → 设备 → 连接桌面设备**，扫描自己面板上的二维码并确认。开启两步验证的账号，再输入 Telegram 两步验证密码。
 
-示例：
+完整表单、凭证区别和申请排错见 [API ID / API Hash 申请说明](docs/telegram-api.md)。Web 面板不需要预先生成 StringSession，也不需要先创建通知机器人。支持多个 Telegram 账号，但一个实例只有一套管理权限，并非面向公众注册的多用户平台。
 
-```json
-{
-  "project_name": "Telegram 自动任务",
-  "telegram_api_id": "123456",
-  "telegram_api_hash": "your-api-hash",
-  "telegram_bot_token": "your-telegram-bot-token",
-  "telegram_summary_notify_chat_id": "123456789",
-  "telegram_response_timeout_seconds": "60",
-  "telegram_proxy": {
-    "type": "socks5",
-    "host": "127.0.0.1",
-    "port": 7897
-  },
-  "telegram_accounts": [
-    {
-      "name": "账号 A",
-      "session": "first-account-telethon-string-session",
-      "notify_chat_id": "me",
-      "tasks": [
-        {
-          "name": "HDHive 自动签到",
-          "type": "签到",
-          "target_account": "suloveslife@qq.com",
-          "bot_username": "@HDHiveBot",
-          "message": "赌狗签到"
-        },
-        {
-          "name": "癫影自动签到",
-          "type": "签到",
-          "target_account": "xxxxx",
-          "bot_username": "@dianyingbalala_bot",
-          "message": "/lqd"
-        }
-      ]
-    }
-  ]
-}
-```
+## 创建第一条任务
 
-## 配置字段说明
+先在 Telegram 手动确认机器人绑定和指令可用，再进入“我的任务 → 创建任务”：
 
-顶层字段：
+1. **选择方式**：普通签到选“发送一条消息”，需要按钮交互选“消息＋按钮操作”。
+2. **账号与目标**：选择由哪个账号发送，搜索最近会话或填写目标的 `@用户名` / 数字 ID。选“发给自己”会发到该账号的 Saved Messages（收藏夹）。
+3. **操作内容**：填实际消息。只发送提醒时关闭等待；收集机器人结果时开启“等待对方回复”，需要时再设成功、失败关键词。
+4. **时间与确认**：例如每天 `07:30`、`Asia/Shanghai`，选择通知方式，确认后创建。
 
-- `project_name`：通知标题里显示的项目名。
-- `telegram_api_id`：你在 my.telegram.org 申请到的 `api_id`。
-- `telegram_api_hash`：你在 my.telegram.org 申请到的 `api_hash`。
-- `telegram_bot_token`：可选。用于发送所有任务的总汇总通知。
-- `telegram_summary_notify_chat_id`：可选。接收总汇总通知的 chat id。
-- `telegram_response_timeout_seconds`：每个任务等待机器人回复的最长时间，默认建议 `60` 秒。
-- `telegram_proxy`：可选。本地连接 Telegram 超时时使用。
-- `telegram_accounts`：Telegram 登录账号数组。
+“创建并开启”只保存后续计划，**不会立即发消息**。要马上验证，点列表的执行按钮，核对弹窗里的账号、目标和内容后确认。按钮文字必须在当前消息中唯一匹配；不会自动打开链接、分享联系人或位置。
 
-`telegram_accounts` 中每个账号的字段：
+消息支持 `{{date}}`、`{{time}}`、`{{weekday}}`，执行时按任务时区替换。关闭浏览器不影响服务端执行，部署机器和 Docker 需要保持运行。
 
-- `name`：Telegram 登录账号名称，只用于日志和通知展示。
-- `session`：这个 Telegram 账号生成的 `StringSession`。
-- `notify_chat_id`：可选。这个账号自己的任务结果通知目标。
-- `tasks`：这个 Telegram 账号要执行的任务数组。
+## 如何看执行结果
 
-`tasks` 中每个任务的字段：
+![拾刻执行记录：回复内容直接显示在独立列中](docs/images/runs.png)
 
-- `name`：任务名称，例如 `HDHive 自动签到`。
-- `type`：任务类型，例如 `签到`、`提醒`、`查询`。
-- `target_account`：业务账号名称，只用于展示，例如站点账号邮箱。
-- `bot_username`：要发送消息的 Telegram 机器人 username。
-- `message`：要发送给机器人的消息内容。
+| 状态 | 含义 |
+| --- | --- |
+| 已发送 | 只发送流程完成，不需要对方回复 |
+| 已收到回复 | 收到了目标会话的消息，具体业务结果看原文 |
+| 规则匹配成功 / 失败 | 命中你设置的关键词；失败关键词优先 |
+| 已发送 · 未等到回复 | Telegram 已确认发送，但等待期间没收到符合条件的回复 |
+| 发送结果未确认 | 请求结果不确定，先去 Telegram 核对再决定是否重跑 |
 
-## 通知配置
+**收到回复不等于签到成功，等待超时也不等于消息没发出去。** 系统不会因没等到回复或连接恢复而自动重发业务消息。服务重启会标记未完成执行为中断，跳过过期计划，恢复后续计划；同一账号的任务顺序执行，Telegram 限流等待按账号处理。
 
-通知分两种。
+## 维护、备份与升级
 
-### 账号自己的通知
+在原安装目录运行：
 
-配置在每个 Telegram 账号里：
+| 操作 | 命令 |
+| --- | --- |
+| 查看状态 / 日志 | `sh shike.sh status` / `sh shike.sh logs` |
+| 启动 / 停止，保留数据 | `sh shike.sh start` / `sh shike.sh stop` |
+| 补设尚未初始化的管理密码 | `sh shike.sh init` |
+| 忘记管理密码后重设 | `sh shike.sh reset-password` |
+| 备份 | `sh shike.sh backup` |
+| 切回上次镜像 | `sh shike.sh rollback` |
 
-```json
-"notify_chat_id": "me"
-```
-
-含义：这个 Telegram 账号执行完自己的任务后，把该账号下所有任务结果发到自己的 Saved Messages。
-
-`notify_chat_id` 支持：
-
-- `""`：不发送账号通知。
-- `"me"`：发送到当前 session 对应账号的 Saved Messages。
-- `"@username"`：发送给指定 Telegram 用户。
-- 数字 chat id：发送到指定用户、群组或频道。
-
-### 所有任务汇总通知
-
-配置在顶层：
-
-```json
-"telegram_bot_token": "your-telegram-bot-token",
-"telegram_summary_notify_chat_id": "123456789"
-```
-
-含义：所有账号、所有任务执行完后，由 `telegram_bot_token` 对应的机器人发送一条总汇总。
-
-注意：
-
-- `telegram_summary_notify_chat_id` 不支持 `"me"`。
-- 接收方需要先和这个通知机器人发起过会话。
-- 如果配置了 `telegram_summary_notify_chat_id`，就必须同时配置 `telegram_bot_token`。
-
-## Telegram 代理
-
-如果本地运行时出现：
-
-```text
-Attempt 1 at connecting failed: TimeoutError
-Connection to Telegram failed 5 time(s)
-```
-
-说明 Python/Telethon 没有连上 Telegram。即使 Telegram 桌面客户端能用，命令行脚本也不一定自动使用系统代理。
-
-本地 Clash/Mihomo 可以在配置里写：
-
-```json
-"telegram_proxy": {
-  "type": "socks5",
-  "host": "127.0.0.1",
-  "port": 7897
-}
-```
-
-也可以临时通过环境变量测试：
+源码构建版按以下步骤更新：
 
 ```bash
-TELEGRAM_PROXY_URL=socks5://127.0.0.1:7897 python scripts/telegram_checkin.py
+git pull --ff-only
+docker compose -f compose.yaml -f compose.build.yaml build
+SHIKE_PULL_POLICY=never sh shike.sh upgrade
 ```
 
-注意：`127.0.0.1:7897` 只表示当前运行脚本的机器。GitHub Actions 里这个地址不是你的 Mac，不要直接把本机 Clash 地址填到 Actions。
+升级脚本会先备份，再替换镜像；发现正在执行的任务时会提示稍后再试。正式 Release 的版本升级、镜像回退与数据恢复见[完整部署指南](docs/docker-deployment.md)。
 
-## 本地测试
-
-确认当前分支：
-
-```bash
-git branch --show-current
-```
-
-安装依赖：
-
-```bash
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-```
-
-先跑单元测试：
-
-```bash
-TELEGRAM_LOCAL_CONFIG_PATH=/private/tmp/telegram-auto-tasks-missing-local-config.json python -m unittest discover -s tests
-```
-
-再跑真实任务：
-
-```bash
-python scripts/telegram_checkin.py
-```
-
-如果本地需要代理：
-
-```bash
-TELEGRAM_PROXY_URL=socks5://127.0.0.1:7897 python scripts/telegram_checkin.py
-```
-
-结果会写到：
-
-```text
-artifacts/latest-results.json
-```
-
-## GitHub Actions 配置
-
-进入你的 GitHub 仓库：
-
-```text
-Settings -> Secrets and variables -> Actions
-```
-
-### Secrets
-
-必填：
-
-```text
-TELEGRAM_API_ID
-TELEGRAM_API_HASH
-TELEGRAM_ACCOUNTS_JSON
-```
-
-如果需要所有任务汇总通知，再添加：
-
-```text
-TELEGRAM_BOT_TOKEN
-```
-
-`TELEGRAM_ACCOUNTS_JSON` 只填 `telegram_accounts` 这个数组，不要包含外层对象。
-
-例如：
-
-```json
-[
-  {
-    "name": "账号 A",
-    "session": "first-account-telethon-string-session",
-    "notify_chat_id": "me",
-    "tasks": [
-      {
-        "name": "HDHive 自动签到",
-        "type": "签到",
-        "target_account": "suloveslife@qq.com",
-        "bot_username": "@HDHiveBot",
-        "message": "赌狗签到"
-      },
-      {
-        "name": "癫影自动签到",
-        "type": "签到",
-        "target_account": "xxxxx",
-        "bot_username": "@dianyingbalala_bot",
-        "message": "/lqd"
-      }
-    ]
-  }
-]
-```
-
-GitHub Secrets 里必须是严格 JSON，不能写注释。
-
-### Variables
-
-可选添加：
-
-```text
-TELEGRAM_PROJECT_NAME = Telegram 自动任务
-TELEGRAM_RESPONSE_TIMEOUT_SECONDS = 60
-TELEGRAM_SUMMARY_NOTIFY_CHAT_ID = 123456789
-```
-
-如果你配置了 `TELEGRAM_SUMMARY_NOTIFY_CHAT_ID`，就必须同时配置 `TELEGRAM_BOT_TOKEN`。
-
-## 触发方式
-
-工作流支持三种触发方式：
-
-- 定时触发：北京时间每天 `05:23`。
-- 手动触发：GitHub Actions 页面点击 `Run workflow`。
-- push 触发：当 `scripts/**`、`tests/**`、workflow、依赖或配置模板变化时触发。
-
-定时配置在 [.github/workflows/checkin.yml](/Users/sue/hdhive-auto-checkin/.github/workflows/checkin.yml)：
-
-```yaml
-cron: "23 21 * * *"
-```
-
-这个时间是 UTC，对应北京时间每天 `05:23`。
-
-## 汇总通知格式
-
-汇总通知大致如下：
-
-```text
-🧩 Telegram 自动任务汇总
-━━━━━━━━━━━━━━━━━━
-🕒 执行时间：2026-09-11 21:54:19
-📦 任务数量：3
-
-👥 Telegram账号：账号 A
-
-⎡ 🏷️ 任务名称：HDHive 自动签到
-├ 📌 任务类型：签到
-├ 👤 任务账号：suloveslife@qq.com
-├ 🤖 目标机器人：@HDHiveBot
-├ 📤 发送内容：赌狗签到
-⎣ 📝 机器人返回：你已经签到过了，明天再来吧
-
-⎡ 🏷️ 任务名称：癫影自动签到
-├ 📌 任务类型：签到
-├ 👤 任务账号：xxxxx
-├ 🤖 目标机器人：@dianyingbalala_bot
-├ 📤 发送内容：/lqd
-⎣ 📝 机器人返回：超过 60 秒未收到机器人回复
-```
-
-## 旧配置兼容
-
-脚本仍兼容旧的 `hdhive_telegram_accounts_json` / `HDHIVE_TELEGRAM_ACCOUNTS_JSON`，但推荐迁移到新的 `telegram_accounts` / `TELEGRAM_ACCOUNTS_JSON`。
-
-旧格式每条配置只能表示一个任务；新格式是一个 Telegram 账号下面挂多个任务，更适合长期维护。
-
-旧版 HDHive 专用说明已经备份到：[README.hdhive.md](/Users/sue/hdhive-auto-checkin/README.hdhive.md)。
+保留原安装目录、`.env` 和 Docker 数据卷，**不要执行 `docker compose down -v`**。账号和任务在数据卷里，数据库与加密密钥必须一起保留。备份包含账号授权能力，别上传到公开仓库。
 
 ## 常见问题
 
-### `ModuleNotFoundError: No module named 'telethon'`
+- **Telegram 连接超时**：部署机器也需要能连接 Telegram；在“设置 → Telegram 连接”中配置服务器可达的 SOCKS5 / HTTP 代理。容器的 `127.0.0.1` 指容器自己，不是宿主机代理。
+- **给个人或群组发送后总是超时**：编辑任务，关闭“等待对方回复”。仅发送任务不需要对方回话。
+- **镜像拉取失败 / denied / manifest unknown**：当前先按上面的源码构建方式安装；正式镜像发布后还需维护者将 GHCR 包设为 Public。
+- **网页提示尚未设置管理密码**：回部署目录执行 `sh shike.sh init`。换设备访问同一个实例只需登录，不用重新初始化。
+- **可以部署到 GitHub Actions / Cloudflare Pages 吗**：Actions 使用独立脚本入门版；Web 完整版需要常驻 Python 后端和数据卷，不能仅托管到静态 Pages。Cloudflare 可作为域名代理或 Tunnel 入口，后端仍需运行。
 
-没有安装依赖，或当前终端没有激活项目虚拟环境。
+## 文档与反馈
 
-```bash
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-```
+- [Docker 部署、HTTPS、升级、备份恢复](docs/docker-deployment.md)
+- [Telegram API 申请](docs/telegram-api.md)
+- [本地源码开发与验证](docs/development.md)
+- [维护者：自动发布镜像与安装包](docs/releasing.md)
+- [GitHub Actions 入门版](README.actions.md) · [HDHive 历史说明](README.hdhive.md)
 
-### `PasswordHashInvalidError`
+验证码和两步验证密码不写入数据库；账号会话、API Hash 和通知 Bot Token 在服务端加密保存，页面不回显。加密密钥和数据库同在自己的部署环境中，备份和服务器权限同样需要保管好。
 
-Telegram 二步验证密码错误。
-
-这里要输入的是 Telegram 的 Two-Step Verification Password，不是短信验证码。
-
-### `PhoneCodeInvalidError`
-
-验证码错误。重新运行 `generate_telegram_session.py`，输入最新验证码。
-
-### `PhoneCodeExpiredError`
-
-验证码过期。重新运行脚本获取新验证码。
-
-### `Cannot find any entity corresponding to "5795587098"`
-
-通知目标无法解析。发给当前账号自己时，建议填：
-
-```json
-"notify_chat_id": "me"
-```
-
-### `local.config.json JSON 格式错误`
-
-本地配置不是合法 JSON。常见原因：
-
-- 少了逗号。
-- 字符串没有用双引号。
-- JSON 里写了 `// 注释`。
-- JSON 结尾后面还有多余内容。
-
-可以用下面命令检查：
-
-```bash
-python -m json.tool local.config.json
-```
-
-### GitHub Actions 里没有收到通知
-
-先看 Actions 日志：
-
-- 是否成功读取了账号配置。
-- 是否目标机器人有回复。
-- 是否通知发送失败。
-- 是否配置了 `TELEGRAM_BOT_TOKEN`。
-- `TELEGRAM_SUMMARY_NOTIFY_CHAT_ID` 是否是机器人可发送的 chat id。
-
-## 安全说明
-
-`TELEGRAM_SESSION` 等同于 Telegram 登录凭证。任何拿到它的人，都可能用你的 Telegram 账号发消息。
-
-请注意：
-
-- 不要把真实 session 提交到仓库。
-- 不要把真实 session 发到 Issue、日志、截图里。
-- 建议使用专门跑自动任务的 Telegram 账号。
-- 如果怀疑 session 泄露，去 Telegram App 里终止对应登录会话，然后重新生成。
-
-## Contact
-
-如果你在使用过程中遇到问题，欢迎联系我：
-
-- Telegram: [@suversal](https://t.me/suversal)
-- Email: `suyloveslife@gmail.com`
+反馈问题请通过 [Issues](https://github.com/suversal/hdhive-auto-checkin/issues)，附上使用分支、部署方式、报错与脱敏日志，勿上传 Session、API Hash、二维码、密码或数据备份。也可联系 [Telegram @suversal](https://t.me/suversal)。

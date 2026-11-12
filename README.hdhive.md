@@ -1,3 +1,5 @@
+> **历史文档**：此页保存早期 HDHive 专用脚本的操作记录，字段和通知规则可能与当前实现不同。当前 Web 面板看 [README.md](README.md)，通用 Actions 脚本看 [README.actions.md](README.actions.md)。请勿直接按旧 Secret 名称配置当前工作流。
+
 <div align="center">
   <h1>🧩 HDHive Telegram 自动签到 🧩</h1>
   <p><b>基于 `Python + Telethon + GitHub Actions` 编写的 HDHive 自动化签到工具</b></p>
@@ -73,7 +75,6 @@ api_hash
 ```
 
 这两个值后面会用到。不要公开 `api_hash`。
-<img width="745" height="579" alt="image" src="https://github.com/user-attachments/assets/80e10bf9-02ae-4179-a968-8e602928879a" />
 
 ## 生成 TELEGRAM_SESSION
 
@@ -82,13 +83,13 @@ api_hash
 先安装依赖：
 
 ```bash
-cd /Users/sue/hdhive-auto-checkin
+cd hdhive-auto-checkin
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
 
-打开 [scripts/generate_telegram_session.py](/Users/sue/hdhive-auto-checkin/scripts/generate_telegram_session.py)，把顶部的变量改成你的真实值：
+打开 [scripts/generate_telegram_session.py](scripts/generate_telegram_session.py)，把顶部的变量改成你的真实值：
 
 ```python
 API_ID = 123456
@@ -121,7 +122,6 @@ TELEGRAM_SESSION:
 把这一整串保存下来。它就是该 Telegram 账号的 session。
 如果你有两个 Telegram 账号，就对第二个账号再运行一次这个脚本，生成第二个 session。
 
-<img width="835" height="433" alt="image" src="https://github.com/user-attachments/assets/736f610b-b4f5-490c-b587-2b4c7f8225f1" />
 
 ## 本地配置
 
@@ -203,7 +203,9 @@ cp local.config.example.json local.config.json
 配置在每个账号里：
 
 ```json
+{
 "notify_chat_id": "me"
+}
 ```
 
 含义：这个账号签到完成后，把自己的结果发到自己的 Telegram Saved Messages。
@@ -213,8 +215,10 @@ cp local.config.example.json local.config.json
 配置在顶层：
 
 ```json
+{
 "telegram_bot_token": "your-telegram-bot-token",
 "telegram_summary_notify_chat_id": "123456789"
+}
 ```
 
 含义：所有账号执行完后，由 Telegram Bot 发送一条汇总通知。
@@ -224,7 +228,9 @@ cp local.config.example.json local.config.json
 汇总通知目标推荐填写数字 chat id，或机器人可发送到的 `@username`、群组、频道，例如：
 
 ```json
+{
 "telegram_summary_notify_chat_id": "@your_username"
+}
 ```
 
 `notify_chat_id` 支持：
@@ -381,7 +387,7 @@ TELEGRAM_SUMMARY_NOTIFY_CHAT_ID = 123456789
 - 手动触发：GitHub Actions 页面点击 `Run workflow`。
 - push 触发：当 `scripts/**`、`tests/**`、workflow、依赖或配置模板变化时触发。
 
-定时配置在 [.github/workflows/checkin.yml](/Users/sue/hdhive-auto-checkin/.github/workflows/checkin.yml)：
+定时配置在 [.github/workflows/checkin.yml](.github/workflows/checkin.yml)：
 
 ```yaml
 cron: "23 21 * * *"
@@ -431,7 +437,7 @@ cron: "23 21 * * *"
 执行：
 
 ```bash
-cd /Users/sue/hdhive-auto-checkin
+cd hdhive-auto-checkin
 source .venv/bin/activate
 python -m pip install -r requirements.txt
 ```
@@ -455,7 +461,9 @@ Telegram 二步验证密码错误。
 通知目标无法解析。发给当前账号自己时，建议填：
 
 ```json
+{
 "notify_chat_id": "me"
+}
 ```
 
 ### 6. `local.config.json JSON 格式错误`

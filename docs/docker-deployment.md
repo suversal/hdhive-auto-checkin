@@ -8,11 +8,31 @@
 - Docker 和 `docker compose` 插件。Windows / macOS 用户可安装 [Docker Desktop](https://docs.docker.com/get-started/get-docker/)，服务器按 [Docker Engine 官方指南](https://docs.docker.com/engine/install/) 安装。
 - 支持 Linux AMD64 和 ARM64。Windows 使用 Linux 容器；脚本命令可在 WSL 终端运行。32 位 ARM 不在镜像支持范围内。
 
-安装过程中不需要在宿主机安装 Python、Node，也不需要手写配置文件；管理密码会在安装终端中按提示设置。
+安装过程中不需要在宿主机安装 Python、Node。当前源码构建方式还需要 Git，并创建一份 `.env`；管理密码在终端按提示设置。
 
-## 第一次安装：下载、设置密码、打开网页
+## 方式一：当前使用源码构建
 
-1. 在项目的 **Releases** 页面下载 `shike-docker-版本号.zip`，解压得到 `shike` 文件夹。不要下载 GitHub 自动生成的 Source code 代替安装包。
+目前尚未发布正式 Release 安装包。首次部署先使用下面的源码构建方式，不要直接尝试拉取 `latest`。在要部署的机器上运行；已有安装目录时请跳到[源码升级](#源码构建版升级)，不要覆盖原配置：
+
+```bash
+git clone --depth 1 --branch codex/shike-backend https://github.com/suversal/hdhive-auto-checkin.git shike
+cd shike
+sed 's|^SHIKE_IMAGE=.*|SHIKE_IMAGE=shike:local|' .env.shike.example > .env
+docker compose -f compose.yaml -f compose.build.yaml build
+SHIKE_PULL_POLICY=never sh shike.sh install
+```
+
+先创建 `.env`，再构建，可确保 Compose 和管理脚本都使用同一个 `shike:local` 镜像。`SHIKE_PULL_POLICY=never` 让安装跳过远端拉取。
+
+按提示设置并确认管理密码（至少 10 位，输入不回显），健康检查通过后继续下方的本机 / SSH 访问说明。服务运行后在网页填写 Telegram API 信息，详见 [API ID / API Hash 申请](https://github.com/suversal/hdhive-auto-checkin/blob/codex/shike-backend/docs/telegram-api.md)。
+
+Linux 若需要 `sudo` 操作 Docker，构建命令加 `sudo`，安装命令使用 `sudo env SHIKE_PULL_POLICY=never sh shike.sh install`；后续管理命令也需相应权限。
+
+## 方式二：已有正式 Release 安装包时
+
+以下方式需要维护者已经成功发布镜像和附件。去项目的 [Releases](https://github.com/suversal/hdhive-auto-checkin/releases) 核对，找不到对应文件时使用上方源码构建，不要猜版本号。
+
+1. 下载对应 Release 的 `shike-docker-版本号.zip`，解压得到 `shike` 文件夹。不要下载 GitHub 自动生成的 Source code 代替安装包。
 2. 启动 Docker，在解压文件夹中打开终端，运行：
 
    ```bash
@@ -20,11 +40,15 @@
    ```
 
 3. 按终端提示设置并确认管理密码（至少 10 位，输入不回显）。等待健康检查通过，打开显示的网页入口，用这个密码登录。
-4. 根据页面引导填写 Telegram API ID / API Hash，然后扫码接入账号，创建第一条任务。
+4. 根据页面引导填写 Telegram API ID / API Hash（[申请步骤](https://github.com/suversal/hdhive-auto-checkin/blob/codex/shike-backend/docs/telegram-api.md)），然后扫码接入账号，创建第一条任务。
 
 安装包固定使用对应版本的镜像，不会自动跳到其他版本。默认入口是 `http://127.0.0.1:8787`，只允许本机访问。网页只提供管理密码登录，不开放公开注册；更换设备无需重新初始化。安装中断或已有未初始化的实例，可运行 `sh shike.sh init` 补设密码并启动。
 
-如果 Releases 尚无安装包、或镜像还未公开，先使用本文末尾的“源码构建”。发布流水线不会因为下载源码就自动执行。
+发布流水线不会因为下载源码就自动执行。正式安装包依赖镜像已经发布且公开，安装前不需要登录维护者的 GHCR 账号。
+
+## 本机访问
+
+在部署机器的浏览器打开 `http://127.0.0.1:8787`，使用终端设置的管理密码登录。首次设置未完成时运行 `sh shike.sh init`；忘记密码用 `sh shike.sh reset-password`。
 
 ## 装在云服务器：先通过 SSH 打开
 
@@ -41,18 +65,25 @@ ssh -N -L 8787:127.0.0.1:8787 用户名@服务器地址
 ## 有域名：可选自动 HTTPS
 
 1. 将域名的 DNS 记录指向服务器，放行服务器的 TCP 80、443 端口，确认没有其他服务占用它们。
-2. 首次运行脚本前，将 `.env.shike.example` 复制为 `.env`；已有 `.env` 时直接编辑，**不要用示例覆盖现有配置**。
-3. 只需填写这一项，其他内容保持原样：
+2. 在上方完成安装后，编辑原目录的 `.env`，**不要用示例覆盖现有配置**。
+3. 填写这一项，镜像等其他内容保持原样：
 
    ```dotenv
    SHIKE_DOMAIN=shike.example.com
    ```
 
-4. 运行 `sh shike.sh install`。脚本自动加载 `compose.https.yaml`，由 Caddy 申请证书并转发到后端。之后使用 `https://你的域名`。
+4. 挑没有任务执行的时候运行下面的命令。先下载 Caddy，再启动已有实例（`start` 本身不拉取缺失的镜像）：
+
+   ```bash
+   docker compose -f compose.yaml -f compose.https.yaml pull caddy
+   sh shike.sh start
+   ```
+
+脚本自动加载 `compose.https.yaml`，由 Caddy 申请证书并转发到后端。之后使用 `https://你的域名`，账号和任务继续保留。
 
 证书申请需要域名能从公网解析并访问服务器。Caddy 的证书保存在独立 Docker 卷中，普通升级会保留。
 
-已有 HTTPS 反向代理时，留空 `SHIKE_DOMAIN`，填写 `SHIKE_PUBLIC_URL=https://你的域名`，让现有代理转发到本机 8787 并保留 Host。不要将管理面板直接开放为公网明文 HTTP。暂不支持 `/shike` 等域名子路径。
+已有 HTTPS 反向代理时，留空 `SHIKE_DOMAIN`，填写 `SHIKE_PUBLIC_URL=https://你的域名`，让现有代理转发到本机 8787 并保留 Host，再运行 `sh shike.sh start` 应用配置。若代理也在容器中，使用它能访问的后端地址，代理容器自己的 `127.0.0.1` 并不是宿主机。不要将管理面板直接开放为公网明文 HTTP。暂不支持 `/shike` 等域名子路径。
 
 ## 常用命令
 
@@ -73,7 +104,19 @@ ssh -N -L 8787:127.0.0.1:8787 用户名@服务器地址
 
 账号、任务和记录存在 Docker 命名卷中。保留安装目录的 `.env`，不要随意改变文件夹名或 Compose 项目名，否则可能连接到另一个数据卷。不要执行 `docker compose down -v`，它会删除数据卷。
 
-## 升级：一个命令，先备份再更换镜像
+## 源码构建版升级
+
+在原安装目录保留现有 `.env` 和卷，镜像仍使用 `SHIKE_IMAGE=shike:local`：
+
+```bash
+git pull --ff-only
+docker compose -f compose.yaml -f compose.build.yaml build
+SHIKE_PULL_POLICY=never sh shike.sh upgrade
+```
+
+构建完成后，由管理脚本备份并替换容器。不要直接用 `docker compose up --build` 绕过维护和备份；无需加版本号，否则会把本地镜像名改成不存在的版本标签。回退后脚本可能把 `.env` 指向 `shike-rollback:*`；下次源码升级前先把 `SHIKE_IMAGE` 改回 `shike:local`，其他配置保持原样。
+
+## 正式镜像升级：先备份再更换镜像
 
 先查看目标 Release 的说明，再将下面的 `0.1.1` 换成实际已发布版本：
 
@@ -124,7 +167,9 @@ sh shike.sh start
 
 使用外部 `SHIKE_SECRET_KEY` 的实例，需要保留匹配的 `.env`；密钥不匹配时恢复会拒绝覆盖。
 
-## 无脚本安装 / Windows Compose 用法
+## 无脚本安装 / Windows Compose 用法（已发布镜像）
+
+此方式依赖公开镜像。尚未发布时按本文开头构建；Windows 新用户推荐在 WSL 使用管理脚本。
 
 在安装目录复制示例文件为 `.env`，然后运行：
 
@@ -146,16 +191,15 @@ docker compose up -d --wait
 - **忘记管理密码**：运行 `sh shike.sh reset-password`，脚本确认没有活动执行后暂停服务，按终端提示输入密码，再恢复服务；Telegram 账号和任务保留。
 - **页面提示尚未设置管理密码**：在安装目录运行 `sh shike.sh init`，完成后刷新登录页。初始化只能在部署端进行，已有管理员不会被该命令覆盖。
 
-## 开发者：源码构建和原有安装迁移
+## 开发者：原有源码安装迁移
 
-源码仓库保留构建覆盖文件，不依赖已发布镜像：
+源码仓库保留构建覆盖文件，不依赖已发布镜像。已有 `.env` 时不要重新生成；先确认其中 `SHIKE_IMAGE=shike:local`，再运行：
 
 ```bash
 docker compose -f compose.yaml -f compose.build.yaml build
-docker compose -f compose.yaml -f compose.build.yaml run --rm --no-deps shike python -m shike init-admin
-docker compose -f compose.yaml -f compose.build.yaml up -d --wait
+SHIKE_PULL_POLICY=never sh shike.sh install
 ```
 
-镜像内部完成前端编译，运行层不包含 Node、测试、源码配置或开发依赖。原有使用 `docker compose up --build` 的开发安装，在同一文件夹、同一 `.env` 下按上述覆盖文件构建即可；卷名和 Compose 项目名保持不变。原镜像若没有维护命令，先在没有任务执行时停止服务、离线备份完整原数据卷，再构建新镜像。
+以上 `install` 只用于尚未创建容器的新实例；检测到已有实例时会提示使用 `upgrade`。正常源码升级用上方“源码构建版升级”。原镜像若没有维护命令，先在没有任务执行时停止服务、离线备份完整原数据卷，再在原 Compose 项目下构建和启动；不要在未停止的旧服务旁运行一次性初始化容器。
 
-源码构建完成后若使用管理脚本，在 `.env` 设置 `SHIKE_IMAGE=shike:local`，离线操作可显式使用 `SHIKE_PULL_POLICY=never sh shike.sh install`。公开用户优先使用 Release 安装包。
+镜像内部完成前端编译，运行层不包含 Node、测试、源码配置或开发依赖。卷名和 Compose 项目名保持不变。直接运行 Python 源码的开发说明见[本地开发](https://github.com/suversal/hdhive-auto-checkin/blob/codex/shike-backend/docs/development.md)。
